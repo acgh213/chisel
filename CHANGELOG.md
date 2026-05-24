@@ -29,6 +29,17 @@ chisel uses [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.3.0] — 2026-05-24
+
+### added
+- **phase 4 (mirror + research):** Ctrl+A style analysis using mirror model — surfaces overused words, rhythm issues, writerly tics
+- **phase 4 (mirror + research):** Ctrl+F5 research gathering — prompt for topic, LLM researches, saves to `research/{slug}.md`, auto-tags current scene
+- **phase 4 (mirror + research):** auto-tag — new research notes automatically linked to current scene via `research_refs` in manifest
+- **phase 4 (mirror + research):** tag system — `t` adds tag to selected scene (inline prompt), `T` filters binder by tag, filter clears on empty input
+- **phase 4 (mirror + research):** `NewBinderModelFiltered` — filtered binder view showing only scenes matching a tag
+
+---
+
 ## [0.2.0] — 2026-05-24
 
 ### added

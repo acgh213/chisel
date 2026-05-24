@@ -62,6 +62,8 @@ type Model struct {
 	llmPanel     strings.Builder
 	llmStreaming bool
 	llmChan      <-chan LLMResponse
+	llmOp        string // current operation for completion handling
+	llmOpArg     string // e.g., research topic
 
 	width  int
 	height int
@@ -203,6 +205,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if value != "" {
 					if kind == "ask" {
 						return m, m.llmAsk(value)
+					} else if kind == "research" {
+						return m, m.llmResearch(value)
+					} else if kind == "tag" {
+						return m, m.addTag(value)
+					} else if kind == "filter" {
+						m.filterByTag(value)
+						return m, nil
 					}
 					return m, m.createScene(value)
 				}
@@ -304,6 +313,14 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		return m.llmSummarize()
 	case "ctrl+k":
 		return m.llmAskPrompt()
+	case "ctrl+a":
+		return m.llmAnalyze()
+	case "f5":  // Ctrl+F5
+		return m.llmResearchPrompt()
+	case "t":
+		return m.tagSceneDialog()
+	case "T":
+		return m.filterByTagDialog()
 	case "tab":
 		if m.mode >= 2 {
 			if m.focus == focusEditor {
@@ -785,6 +802,46 @@ func (m *Model) llmAskPrompt() tea.Cmd {
 	return textinput.Blink
 }
 
+func (m *Model) llmAnalyze() tea.Cmd {
+	if m.llmClient == nil {
+		m.setStatus("LLM backend not available")
+		return nil
+	}
+	text := m.editor.textarea.Value()
+	if text == "" {
+		return nil
+	}
+	return m.sendLLM(LLMRequest{
+		Op:   "analyze",
+		Text: text,
+	})
+}
+
+func (m *Model) llmResearchPrompt() tea.Cmd {
+	if m.llmClient == nil {
+		m.setStatus("LLM backend not available")
+		return nil
+	}
+	m.prompting = true
+	m.promptKind = "research"
+	m.promptInput.Placeholder = "topic to research..."
+	m.promptInput.Prompt = "research: "
+	m.promptInput.Focus()
+	return textinput.Blink
+}
+
+func (m *Model) llmResearch(topic string) tea.Cmd {
+	// Save the research result to research/ directory.
+	return m.sendLLM(LLMRequest{
+		Op:       "ask",
+		Question: fmt.Sprintf(
+			"Research the following topic thoroughly. Provide key facts, context, and relevant details. Be concise but comprehensive.\n\nTopic: %s",
+			topic,
+		),
+		Text: m.editor.textarea.Value(),
+	})
+}
+
 func (m *Model) llmAsk(question string) tea.Cmd {
 	return m.sendLLM(LLMRequest{
 		Op:       "ask",
@@ -804,6 +861,12 @@ func (m *Model) sendLLM(req LLMRequest) tea.Cmd {
 	m.llmPanel.Reset()
 	fmt.Fprintf(&m.llmPanel, "▸ %s ...\n", req.Op)
 	m.llmStreaming = true
+	m.llmOp = req.Op
+	m.llmOpArg = ""
+	if req.Op == "ask" && req.Question != "" {
+		m.llmOp = "research"
+		m.llmOpArg = req.Question
+	}
 
 	ch, err := m.llmClient.Send(req)
 	if err != nil {
@@ -841,6 +904,10 @@ func (m *Model) handleLLMResponse(msg llmResponseMsg) tea.Cmd {
 	case "ok":
 		m.llmPanel.WriteString("\n")
 		m.llmStreaming = false
+		// Save research results to file.
+		if m.llmOp == "research" {
+			m.saveResearchNote()
+		}
 	case "error":
 		m.llmPanel.WriteString(fmt.Sprintf("error: %s\n", resp.Result))
 		m.llmStreaming = false
@@ -851,6 +918,130 @@ func (m *Model) handleLLMResponse(msg llmResponseMsg) tea.Cmd {
 		return m.awaitLLMResponse()
 	}
 	return nil
+}
+
+// ---------------------------------------------------------------------------
+// tags
+// ---------------------------------------------------------------------------
+
+func (m *Model) tagSceneDialog() tea.Cmd {
+	node := m.binder.selectedNode()
+	if node == nil || node.IsDir {
+		return nil
+	}
+	m.prompting = true
+	m.promptKind = "tag"
+	m.promptInput.Placeholder = "tag name"
+	m.promptInput.Prompt = "add tag: "
+	m.promptInput.Focus()
+	return textinput.Blink
+}
+
+func (m *Model) addTag(tag string) tea.Cmd {
+	node := m.binder.selectedNode()
+	if node == nil || node.IsDir {
+		return nil
+	}
+	id := strings.TrimSuffix(node.Name, ".md")
+	for i, e := range m.manifest {
+		if e.ID == id {
+			for _, t := range e.Tags {
+				if t == tag {
+					m.setStatus("tag already exists")
+					return nil
+				}
+			}
+			m.manifest[i].Tags = append(m.manifest[i].Tags, tag)
+			_ = SaveManifest(m.projectDir, m.manifest)
+			m.setStatus(fmt.Sprintf("tagged %s → %s", id, tag))
+			return nil
+		}
+	}
+	return nil
+}
+
+func (m *Model) filterByTagDialog() tea.Cmd {
+	m.prompting = true
+	m.promptKind = "filter"
+	m.promptInput.Placeholder = "tag to filter by (empty to clear)"
+	m.promptInput.Prompt = "filter: "
+	m.promptInput.Focus()
+	return textinput.Blink
+}
+
+func (m *Model) filterByTag(tag string) {
+	if tag == "" {
+		// Clear filter.
+		m.binder = NewBinderModel(m.projectDir, m.manifest)
+		m.setStatus("filter cleared")
+		return
+	}
+
+	// Filter manifest entries by tag.
+	var filtered []ManifestEntry
+	for _, e := range m.manifest {
+		for _, t := range e.Tags {
+			if t == tag {
+				filtered = append(filtered, e)
+				break
+			}
+		}
+	}
+
+	// Rebuild binder with only tagged scenes.
+	m.binder = NewBinderModelFiltered(m.projectDir, filtered)
+	m.setStatus(fmt.Sprintf("filter: %s (%d scenes)", tag, len(filtered)))
+}
+
+// ---------------------------------------------------------------------------
+// research
+// ---------------------------------------------------------------------------
+
+func (m *Model) saveResearchNote() {
+	if m.llmOpArg == "" || m.editor.currentFile == "" {
+		return
+	}
+
+	// Create slug from topic.
+	slug := sanitiseName(m.llmOpArg)
+	slug = strings.ToLower(slug)
+	slug = strings.ReplaceAll(slug, " ", "-")
+	if len(slug) > 40 {
+		slug = slug[:40]
+	}
+
+	relPath := "research/" + slug + ".md"
+
+	// Save the research note.
+	content := fmt.Sprintf("# %s\n\n%s", m.llmOpArg, m.llmPanel.String())
+	if err := saveSceneFile(m.projectDir, relPath, content); err != nil {
+		m.setStatus("research save error: " + err.Error())
+		return
+	}
+
+	// Auto-tag current scene.
+	if m.editor.currentFile != "" {
+		id := strings.TrimSuffix(filepath.Base(m.editor.currentFile), ".md")
+		for i, e := range m.manifest {
+			if e.ID == id {
+				// Add research ref if not already present.
+				found := false
+				for _, ref := range e.ResearchRefs {
+					if ref == slug {
+						found = true
+						break
+					}
+				}
+				if !found {
+					m.manifest[i].ResearchRefs = append(m.manifest[i].ResearchRefs, slug)
+					_ = SaveManifest(m.projectDir, m.manifest)
+				}
+				break
+			}
+		}
+	}
+
+	m.setStatus(fmt.Sprintf("research saved: %s", slug))
 }
 
 // ---------------------------------------------------------------------------

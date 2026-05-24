@@ -50,6 +50,48 @@ func NewBinderModel(projectDir string, entries []ManifestEntry) BinderModel {
 	return bm
 }
 
+// NewBinderModelFiltered builds a binder showing only the given manifest
+// entries (used for tag filtering). Nodes not in the list are omitted.
+func NewBinderModelFiltered(projectDir string, entries []ManifestEntry) BinderModel {
+	bm := BinderModel{
+		entries: entries,
+	}
+	allNodes := scanScenesDir(projectDir)
+
+	// Build a set of allowed IDs.
+	allowed := make(map[string]bool, len(entries))
+	for _, e := range entries {
+		allowed[e.ID] = true
+	}
+
+	// Filter the tree.
+	bm.nodes = filterNodes(allNodes, allowed)
+	bm.relinearise()
+	if len(bm.linear) > 0 {
+		bm.cursor = 0
+	}
+	return bm
+}
+
+func filterNodes(nodes []*SceneNode, allowed map[string]bool) []*SceneNode {
+	var result []*SceneNode
+	for _, n := range nodes {
+		if n.IsDir {
+			children := filterNodes(n.Children, allowed)
+			if len(children) > 0 {
+				n.Children = children
+				result = append(result, n)
+			}
+		} else {
+			id := strings.TrimSuffix(n.Name, ".md")
+			if allowed[id] {
+				result = append(result, n)
+			}
+		}
+	}
+	return result
+}
+
 // scanScenesDir recursively reads the scenes/ directory tree.
 func scanScenesDir(projectDir string) []*SceneNode {
 	root := filepath.Join(projectDir, "scenes")
