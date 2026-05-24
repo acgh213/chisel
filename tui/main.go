@@ -83,6 +83,7 @@ func newProject(name string) error {
 		filepath.Join(projectDir, "scenes"),
 		filepath.Join(projectDir, "research"),
 		filepath.Join(projectDir, "exports"),
+		filepath.Join(projectDir, "characters"),
 	}
 	for _, d := range dirs {
 		if err := os.MkdirAll(d, 0755); err != nil {
@@ -167,17 +168,28 @@ usage:
   chisel help            show this help
 
 shortcuts (when running):
-  Ctrl+1       editor only
-  Ctrl+2       binder + editor
-  Ctrl+3       binder + editor + LLM panel
-  Ctrl+S       save
+  Ctrl+1/2/3   pane mode
+  Ctrl+S       save (auto-commits)
   Ctrl+Z       undo
   Ctrl+F       find
-  Ctrl+R       rewrite selected text (LLM)
-  Ctrl+G       generate from cursor (LLM)
-  Ctrl+Shift+S summarize selection/scene (LLM)
-  Ctrl+K       ask a question (LLM)
-  Ctrl+A       analyse style (mirror model)
+  Ctrl+H       revision history
+  Ctrl+R       rewrite (LLM)
+  Ctrl+G       generate (LLM)
+  Ctrl+Shift+S summarize (LLM)
+  Ctrl+K       ask (LLM)
+  Ctrl+A       analyse style (mirror)
   Ctrl+F5      research topic
-  Ctrl+H       revision history`)
+  Ctrl+E       export manuscript
+  Ctrl+Shift+E export docx (pandoc)
+  Ctrl+B       corkboard view
+  Ctrl+O       outline view
+  Ctrl+L       timeline view
+  Ctrl+T       cycle theme
+  Ctrl+Shift+V toggle vim mode
+  Ctrl+Shift+P writing sprint
+  Ctrl+Shift+T typewriter mode
+  Ctrl+Shift+C character sheets
+  Ctrl+Shift+N scene notes
+  Tab          switch focus
+  Esc          return to editor`)
 }

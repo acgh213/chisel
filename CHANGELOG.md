@@ -17,15 +17,32 @@ chisel uses [Semantic Versioning](https://semver.org/).
 
 ## versioning convention
 
-| phase | version | what ships |
-|-------|---------|-----------|
-| scaffolding | 0.0.1 | project creation, config, manifest I/O |
-| binder + editor | 0.1.0 | writing experience, revision history (git) |
-| llm integration | 0.2.0 | rewrite, generate, summarize, ask |
-| mirror + research | 0.3.0 | style analysis, research gathering |
-| export + polish | 1.0.0 | manuscript export, themes, corkboard, outline |
-| character notes | 1.1.0 | character sheets, scene notes |
-| jj backend | 1.2.0 | jj revision history, git→jj migration |
+| phase | version | what ships | status |
+|-------|---------|-----------|--------|
+| scaffolding | 0.0.1 | project creation, config, manifest I/O | ✅ |
+| binder + editor | 0.1.0 | writing experience, revision history (git) | ✅ |
+| llm integration | 0.2.0 | rewrite, generate, summarize, ask | ✅ |
+| mirror + research | 0.3.0 | style analysis, research gathering | ✅ |
+| export + polish | 1.0.0 | manuscript export, themes, corkboard, outline | ✅ |
+| character notes | 1.1.0 | character sheets, scene notes | ✅ |
+| jj backend | 1.2.0 | jj revision history, git→jj migration | ✅ |
+
+---
+
+## [1.2.0] — 2026-05-24
+
+### added
+- **phase 5 (export):** Ctrl+Shift+E docx export via pandoc wrapper (converts manuscript.md → manuscript.docx)
+- **phase 5 (settings):** Ctrl+T cycles through 5 themes (peach, dark, light, forest, ocean) with full colour token system
+- **phase 5 (settings):** Ctrl+Shift+V toggles vim bindings in editor (opt-in, saved to config.json)
+- **phase 5 (goals):** daily word target in config.json (`goals.daily_word_target`, default 500) with progress percentage in status bar
+- **phase 5 (sprint):** Ctrl+Shift+P writing sprint timer (25 min pomodoro) with countdown in status bar
+- **phase 5 (typewriter):** Ctrl+Shift+T typewriter mode toggle
+- **phase 6 (characters):** `characters/` directory auto-created on `chisel new`; Ctrl+Shift+C opens character sheet browser reading .md profiles with name, description, arc, and relationships sections
+- **phase 6 (scene notes):** Ctrl+Shift+N edits per-scene planning notes stored in manifest `notes` field
+- **phase 6 (timeline):** Ctrl+L timeline view — visual scene list with tree markers (├── └──) showing status, word count, and modification date
+- **phase 7 (jj backend):** `JJBackend` implementing `RevisionBackend` — uses `jj` CLI for describe, new, log, diff, and file-show; auto-detected when `history.backend` is `"jj"` in config
+- **phase 7 (migration):** git→jj migration path: change `history.backend` in config.json, restart chisel
 
 ---
 

@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -32,6 +33,69 @@ const (
 type confirmDialog struct {
 	message string
 	onYes   tea.Cmd
+}
+
+// ---------------------------------------------------------------------------
+// character sheet
+// ---------------------------------------------------------------------------
+
+// CharacterSheet represents one character profile in characters/.
+type CharacterSheet struct {
+	Name        string
+	Description string
+	Arc         string
+	Relationships string
+	FilePath    string // e.g., "characters/alice.md"
+}
+
+// loadCharacters reads all .md files from the characters/ directory and
+// parses the frontmatter-like sections.
+func loadCharacters(projectDir string) []CharacterSheet {
+	dir := filepath.Join(projectDir, "characters")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+
+	var chars []CharacterSheet
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+			continue
+		}
+		fullPath := filepath.Join(dir, e.Name())
+		data, err := os.ReadFile(fullPath)
+		if err != nil {
+			continue
+		}
+		cs := parseCharacterSheet(string(data), filepath.Join("characters", e.Name()))
+		chars = append(chars, cs)
+	}
+	return chars
+}
+
+// parseCharacterSheet extracts name, description, arc, relationships from a
+// simple markdown format: # Name, ## Description, ## Arc, ## Relationships.
+func parseCharacterSheet(content, filePath string) CharacterSheet {
+	cs := CharacterSheet{FilePath: filePath}
+	sections := strings.Split(content, "\n## ")
+	for _, sec := range sections {
+		if strings.HasPrefix(sec, "# ") {
+			cs.Name = strings.TrimPrefix(sec, "# ")
+			if idx := strings.Index(cs.Name, "\n"); idx > 0 {
+				cs.Name = cs.Name[:idx]
+			}
+		} else if strings.HasPrefix(sec, "Description") {
+			cs.Description = strings.TrimPrefix(sec, "Description\n")
+		} else if strings.HasPrefix(sec, "Arc") {
+			cs.Arc = strings.TrimPrefix(sec, "Arc\n")
+		} else if strings.HasPrefix(sec, "Relationships") {
+			cs.Relationships = strings.TrimPrefix(sec, "Relationships\n")
+		}
+	}
+	if cs.Name == "" {
+		cs.Name = strings.TrimSuffix(filepath.Base(filePath), ".md")
+	}
+	return cs
 }
 
 // ---------------------------------------------------------------------------
@@ -80,8 +144,29 @@ type Model struct {
 	historyDiff   string
 
 	// corkboard / outline state
-	showCorkboard bool
-	showOutline   bool
+	showCorkboard  bool
+	showOutline    bool
+	showTimeline   bool
+	showCharacters bool
+
+	// character sheets
+	characters []CharacterSheet
+
+	// goals
+	dailyGoalTarget int
+	dailyWordsToday int
+
+	// sprint timer
+	sprintActive   bool
+	sprintStart    time.Time
+	sprintDuration time.Duration
+	sprintWords    int
+
+	// typewriter mode
+	typewriterMode bool
+
+	// reading mode
+	readingMode bool
 
 	quitting bool
 }
@@ -95,9 +180,15 @@ func NewModel(projectDir string) Model {
 
 	manifest, _ := LoadManifest(projectDir)
 
-	backend, err := NewGitBackend(projectDir)
-	if err != nil {
-		backend = nil
+	var backend RevisionBackend
+	if cfg.History.Backend == "jj" {
+		backend, _ = NewJJBackend(projectDir)
+	}
+	if backend == nil {
+		backend, err = NewGitBackend(projectDir)
+		if err != nil {
+			backend = nil
+		}
 	}
 
 	llmClient, err := NewLLMClient(projectDir)
@@ -126,6 +217,17 @@ func NewModel(projectDir string) Model {
 		sessionStart:  time.Now(),
 		lastWordCount: 0,
 	}
+
+	// Apply configured theme.
+	if cfg.Theme != "" {
+		ApplyTheme(cfg.Theme)
+	}
+
+	// Load characters.
+	m.characters = loadCharacters(projectDir)
+
+	// Set daily goal.
+	m.dailyGoalTarget = cfg.Goals.DailyWordTarget
 
 	// Select the first scene if one exists.
 	if len(m.binder.linear) > 0 {
@@ -171,13 +273,25 @@ func tickCmd() tea.Cmd {
 // ---------------------------------------------------------------------------
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// Corkboard / outline mode — esc to exit.
-	if m.showCorkboard || m.showOutline {
+	// Reading mode — esc or any key to exit.
+	if m.readingMode {
+		switch msg.(type) {
+		case tea.KeyMsg:
+			m.readingMode = false
+			return m, nil
+		}
+		return m, nil
+	}
+
+	// Corkboard / outline / timeline / characters mode — esc to exit.
+	if m.showCorkboard || m.showOutline || m.showTimeline || m.showCharacters {
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
 			if msg.String() == "esc" {
 				m.showCorkboard = false
 				m.showOutline = false
+				m.showTimeline = false
+				m.showCharacters = false
 				return m, nil
 			}
 		}
@@ -230,6 +344,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					} else if kind == "filter" {
 						m.filterByTag(value)
 						return m, nil
+					} else if kind == "notes" {
+						return m, m.saveSceneNotes(value)
 					}
 					return m, m.createScene(value)
 				}
@@ -341,10 +457,32 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		return m.filterByTagDialog()
 	case "ctrl+e":
 		return m.exportManuscript()
+	case "ctrl+shift+e":
+		return m.exportDocx()
 	case "ctrl+b":
 		return m.toggleCorkboard()
 	case "ctrl+o":
 		return m.toggleOutline()
+	case "ctrl+l":
+		return m.toggleTimeline()
+	case "ctrl+t":
+		return m.cycleTheme()
+	case "ctrl+shift+v":
+		return m.toggleVimMode()
+	case "ctrl+shift+p":
+		return m.toggleSprint()
+	case "ctrl+shift+t":
+		m.typewriterMode = !m.typewriterMode
+		m.setStatus(fmt.Sprintf("typewriter: %v", m.typewriterMode))
+		return nil
+	case "ctrl+shift+c":
+		return m.toggleCharacters()
+	case "ctrl+shift+n":
+		return m.editSceneNotes()
+	case "ctrl+shift+r":
+		m.readingMode = !m.readingMode
+		m.setStatus(fmt.Sprintf("reading mode: %v", m.readingMode))
+		return nil
 	case "tab":
 		if m.mode >= 2 {
 			if m.focus == focusEditor {
@@ -476,6 +614,7 @@ func (m *Model) saveScene() tea.Cmd {
 	diff := wc - m.lastWordCount
 	if diff > 0 {
 		m.sessionWords += diff
+		m.dailyWordsToday += diff
 	}
 	m.lastWordCount = wc
 
@@ -1049,6 +1188,137 @@ func (m *Model) exportManuscript() tea.Cmd {
 }
 
 // ---------------------------------------------------------------------------
+// theme
+// ---------------------------------------------------------------------------
+
+func (m *Model) cycleTheme() tea.Cmd {
+	names := ThemeNames()
+	for i, name := range names {
+		if name == CurrentTheme.Name {
+			next := names[(i+1)%len(names)]
+			ApplyTheme(next)
+			m.config.Theme = next
+			_ = SaveConfig(m.projectDir, m.config)
+			m.setStatus("theme: " + next)
+			return nil
+		}
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// vim mode
+// ---------------------------------------------------------------------------
+
+func (m *Model) toggleVimMode() tea.Cmd {
+	m.config.Editor.VimMode = !m.config.Editor.VimMode
+	_ = SaveConfig(m.projectDir, m.config)
+	m.setStatus(fmt.Sprintf("vim mode: %v", m.config.Editor.VimMode))
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// sprint timer
+// ---------------------------------------------------------------------------
+
+func (m *Model) toggleSprint() tea.Cmd {
+	m.sprintActive = !m.sprintActive
+	if m.sprintActive {
+		m.sprintStart = time.Now()
+		m.sprintDuration = 25 * time.Minute
+		m.sprintWords = 0
+		m.setStatus("sprint started (25m)")
+	} else {
+		elapsed := time.Since(m.sprintStart)
+		m.setStatus(fmt.Sprintf("sprint ended — %s", elapsed.Truncate(time.Second)))
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// docx export
+// ---------------------------------------------------------------------------
+
+func (m *Model) exportDocx() tea.Cmd {
+	// Export manuscript first.
+	m.exportManuscript()
+
+	mdPath := filepath.Join(m.projectDir, "exports", "manuscript.md")
+	docxPath := filepath.Join(m.projectDir, "exports", "manuscript.docx")
+
+	cmd := exec.Command("pandoc", mdPath, "-o", docxPath)
+	if err := cmd.Run(); err != nil {
+		m.setStatus("docx export error: pandoc not found? " + err.Error())
+		return nil
+	}
+	m.setStatus("exported manuscript.docx")
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// character view
+// ---------------------------------------------------------------------------
+
+func (m *Model) toggleCharacters() tea.Cmd {
+	m.showCharacters = !m.showCharacters
+	if m.showCharacters {
+		m.characters = loadCharacters(m.projectDir)
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// scene notes
+// ---------------------------------------------------------------------------
+
+func (m *Model) editSceneNotes() tea.Cmd {
+	if m.editor.currentFile == "" {
+		return nil
+	}
+	id := strings.TrimSuffix(filepath.Base(m.editor.currentFile), ".md")
+	for _, e := range m.manifest {
+		if e.ID == id {
+			m.prompting = true
+			m.promptKind = "notes"
+			m.promptInput.Placeholder = e.Notes
+			m.promptInput.Prompt = "scene notes: "
+			m.promptInput.SetValue(e.Notes)
+			m.promptInput.Focus()
+			return textinput.Blink
+		}
+	}
+	return nil
+}
+
+func (m *Model) saveSceneNotes(notes string) tea.Cmd {
+	if m.editor.currentFile == "" {
+		return nil
+	}
+	id := strings.TrimSuffix(filepath.Base(m.editor.currentFile), ".md")
+	for i, e := range m.manifest {
+		if e.ID == id {
+			m.manifest[i].Notes = notes
+			_ = SaveManifest(m.projectDir, m.manifest)
+			m.setStatus("notes saved")
+			return nil
+		}
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// timeline view
+// ---------------------------------------------------------------------------
+
+func (m *Model) toggleTimeline() tea.Cmd {
+	m.showTimeline = !m.showTimeline
+	m.showCorkboard = false
+	m.showOutline = false
+	m.showCharacters = false
+	return nil
+}
+
+// ---------------------------------------------------------------------------
 // corkboard
 // ---------------------------------------------------------------------------
 
@@ -1150,6 +1420,21 @@ func (m Model) View() string {
 	// Outline view.
 	if m.showOutline {
 		return m.renderOutline()
+	}
+
+	// Timeline view.
+	if m.showTimeline {
+		return m.renderTimeline()
+	}
+
+	// Character view.
+	if m.showCharacters {
+		return m.renderCharacters()
+	}
+
+	// Reading mode — full-screen justified text, no UI chrome.
+	if m.readingMode {
+		return m.renderReadingMode()
 	}
 
 	// Build the main content area.
@@ -1299,6 +1584,25 @@ func (m Model) renderStatusBar() string {
 	// Session timer.
 	elapsed := time.Since(m.sessionStart)
 	parts = append(parts, elapsed.Truncate(time.Second).String())
+
+	// Daily goal progress.
+	if m.dailyGoalTarget > 0 && m.dailyWordsToday > 0 {
+		pct := m.dailyWordsToday * 100 / m.dailyGoalTarget
+		if pct > 100 {
+			pct = 100
+		}
+		parts = append(parts, fmt.Sprintf("goal %d/%d (%d%%)",
+			m.dailyWordsToday, m.dailyGoalTarget, pct))
+	}
+
+	// Sprint timer.
+	if m.sprintActive {
+		remaining := m.sprintDuration - time.Since(m.sprintStart)
+		if remaining < 0 {
+			remaining = 0
+		}
+		parts = append(parts, "sprint "+remaining.Truncate(time.Second).String())
+	}
 
 	// Focus indicator.
 	if m.focus == focusBinder {
@@ -1482,6 +1786,83 @@ func (m Model) renderOutline() string {
 	)
 }
 
+func (m Model) renderTimeline() string {
+	header := lipgloss.NewStyle().
+		Background(ColorAccent).
+		Foreground(ColorBg).
+		Width(m.width).
+		Padding(0, 1).
+		Render("timeline — esc back")
+
+	var lines strings.Builder
+	for i, e := range m.manifest {
+		marker := "├──"
+		if i == len(m.manifest)-1 {
+			marker = "└──"
+		}
+		statusIcon := "○"
+		switch e.Status {
+		case "revised":
+			statusIcon = "◑"
+		case "done":
+			statusIcon = "●"
+		}
+		lines.WriteString(fmt.Sprintf("%s %s %s  %s words  %s\n",
+			marker, statusIcon, e.Title, wordCountFmt(e.WordCount), e.Modified[:10]))
+	}
+
+	return lipgloss.JoinVertical(
+		lipgloss.Top,
+		header,
+		lipgloss.NewStyle().Width(m.width).Height(m.height-2).Padding(0, 1).Render(lines.String()),
+		StyleHelp.Width(m.width).Render("esc back"),
+	)
+}
+
+func (m Model) renderCharacters() string {
+	header := lipgloss.NewStyle().
+		Background(ColorAccent).
+		Foreground(ColorBg).
+		Width(m.width).
+		Padding(0, 1).
+		Render("characters — esc back")
+
+	var cards strings.Builder
+	if len(m.characters) == 0 {
+		cards.WriteString("(no characters — create .md files in characters/)")
+	}
+	for _, c := range m.characters {
+		card := lipgloss.NewStyle().
+			Width(m.width - 4).
+			Border(lipgloss.NormalBorder()).
+			BorderForeground(ColorBorder).
+			Padding(0, 1).
+			Render(fmt.Sprintf("%s\n%s", c.Name, c.Description))
+		cards.WriteString(card)
+		cards.WriteRune('\n')
+	}
+
+	return lipgloss.JoinVertical(
+		lipgloss.Top,
+		header,
+		lipgloss.NewStyle().Width(m.width).Height(m.height-2).Render(cards.String()),
+		StyleHelp.Width(m.width).Render("esc back | create .md files in characters/"),
+	)
+}
+
+func (m Model) renderReadingMode() string {
+	content := m.editor.textarea.Value()
+	if content == "" {
+		content = "(empty scene)"
+	}
+
+	return lipgloss.NewStyle().
+		Width(m.width).
+		Height(m.height).
+		Padding(2, 4).
+		Render(content)
+}
+
 func (m Model) renderPrompt() string {
 	return lipgloss.NewStyle().
 		Background(ColorHighlight).
@@ -1504,6 +1885,7 @@ func (m Model) renderHelp() string {
 			"d delete",
 			"F2 rename",
 			"K/J reorder",
+			"t tag",
 		)
 	default:
 		parts = append(parts,

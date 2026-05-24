@@ -13,6 +13,8 @@ type Config struct {
 	Mirror  MirrorConfig  `json:"mirror"`
 	History HistoryConfig `json:"history"`
 	Editor  EditorConfig  `json:"editor"`
+	Goals   GoalsConfig   `json:"goals"`
+	Theme   string        `json:"theme"`
 }
 
 // LLMConfig holds the general-purpose LLM model slot.
@@ -41,6 +43,11 @@ type EditorConfig struct {
 	VimMode bool `json:"vim_mode"`
 }
 
+// GoalsConfig holds writing goal settings.
+type GoalsConfig struct {
+	DailyWordTarget int `json:"daily_word_target"`
+}
+
 // DefaultConfig returns a Config populated with safe defaults.
 func DefaultConfig() Config {
 	return Config{
@@ -62,12 +69,14 @@ func DefaultConfig() Config {
 		Editor: EditorConfig{
 			VimMode: false,
 		},
+		Goals: GoalsConfig{
+			DailyWordTarget: 500,
+		},
+		Theme: "peach",
 	}
 }
 
 // LoadConfig reads and unmarshals config.json from the given project directory.
-// Missing or invalid fields fall back to defaults via JSON unmarshalling into a
-// pre-populated default struct.
 func LoadConfig(projectDir string) (Config, error) {
 	cfg := DefaultConfig()
 
