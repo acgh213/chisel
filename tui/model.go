@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -76,7 +77,11 @@ type Model struct {
 	showHistory   bool
 	revisions     []Revision
 	historyCursor int
-	historyDiff   string // rendered diff when comparing two revs
+	historyDiff   string
+
+	// corkboard / outline state
+	showCorkboard bool
+	showOutline   bool
 
 	quitting bool
 }
@@ -166,6 +171,19 @@ func tickCmd() tea.Cmd {
 // ---------------------------------------------------------------------------
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Corkboard / outline mode — esc to exit.
+	if m.showCorkboard || m.showOutline {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			if msg.String() == "esc" {
+				m.showCorkboard = false
+				m.showOutline = false
+				return m, nil
+			}
+		}
+		return m, nil
+	}
+
 	// History mode — overlay captures all keyboard input.
 	if m.showHistory {
 		switch msg := msg.(type) {
@@ -321,6 +339,12 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		return m.tagSceneDialog()
 	case "T":
 		return m.filterByTagDialog()
+	case "ctrl+e":
+		return m.exportManuscript()
+	case "ctrl+b":
+		return m.toggleCorkboard()
+	case "ctrl+o":
+		return m.toggleOutline()
 	case "tab":
 		if m.mode >= 2 {
 			if m.focus == focusEditor {
@@ -994,6 +1018,53 @@ func (m *Model) filterByTag(tag string) {
 }
 
 // ---------------------------------------------------------------------------
+// export
+// ---------------------------------------------------------------------------
+
+func (m *Model) exportManuscript() tea.Cmd {
+	// Sort manifest by draft_order.
+	ordered := make([]ManifestEntry, len(m.manifest))
+	copy(ordered, m.manifest)
+	// Simple: manifest order = draft order.
+	var sb strings.Builder
+	for _, e := range ordered {
+		content, err := loadSceneFile(m.projectDir, e.File)
+		if err != nil {
+			continue
+		}
+		sb.WriteString(content)
+		sb.WriteString("\n\n")
+	}
+	exportPath := filepath.Join(m.projectDir, "exports", "manuscript.md")
+	if err := os.MkdirAll(filepath.Dir(exportPath), 0755); err != nil {
+		m.setStatus("export error: " + err.Error())
+		return nil
+	}
+	if err := os.WriteFile(exportPath, []byte(sb.String()), 0644); err != nil {
+		m.setStatus("export error: " + err.Error())
+		return nil
+	}
+	m.setStatus(fmt.Sprintf("exported manuscript (%d scenes)", len(ordered)))
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// corkboard
+// ---------------------------------------------------------------------------
+
+func (m *Model) toggleCorkboard() tea.Cmd {
+	m.showCorkboard = !m.showCorkboard
+	m.showOutline = false
+	return nil
+}
+
+func (m *Model) toggleOutline() tea.Cmd {
+	m.showOutline = !m.showOutline
+	m.showCorkboard = false
+	return nil
+}
+
+// ---------------------------------------------------------------------------
 // research
 // ---------------------------------------------------------------------------
 
@@ -1069,6 +1140,16 @@ func (m Model) View() string {
 	// History overlay takes over the whole screen.
 	if m.showHistory {
 		return m.renderHistory()
+	}
+
+	// Corkboard view.
+	if m.showCorkboard {
+		return m.renderCorkboard()
+	}
+
+	// Outline view.
+	if m.showOutline {
+		return m.renderOutline()
 	}
 
 	// Build the main content area.
@@ -1324,6 +1405,80 @@ func (m Model) renderHistory() string {
 		revisionList,
 		diffPanel,
 		help,
+	)
+}
+
+func (m Model) renderCorkboard() string {
+	header := lipgloss.NewStyle().
+		Background(ColorAccent).
+		Foreground(ColorBg).
+		Width(m.width).
+		Padding(0, 1).
+		Render("corkboard — esc back")
+
+	var cards strings.Builder
+	cols := 3
+	if m.width < 80 {
+		cols = 2
+	}
+	cardWidth := m.width/cols - 2
+
+	for _, e := range m.manifest {
+		content, _ := loadSceneFile(m.projectDir, e.File)
+		firstLine := strings.SplitN(content, "\n", 2)[0]
+		if len(firstLine) > cardWidth-4 {
+			firstLine = firstLine[:cardWidth-7] + "..."
+		}
+
+		card := lipgloss.NewStyle().
+			Width(cardWidth).
+			Border(lipgloss.NormalBorder()).
+			BorderForeground(ColorBorder).
+			Padding(0, 1).
+			Render(fmt.Sprintf("%s\n%d words · %s\n%s",
+				e.Title, e.WordCount, e.Status, firstLine))
+
+		cards.WriteString(card)
+	}
+
+	return lipgloss.JoinVertical(
+		lipgloss.Top,
+		header,
+		lipgloss.NewStyle().Width(m.width).Render(cards.String()),
+		StyleHelp.Width(m.width).Render("esc back"),
+	)
+}
+
+func (m Model) renderOutline() string {
+	header := lipgloss.NewStyle().
+		Background(ColorAccent).
+		Foreground(ColorBg).
+		Width(m.width).
+		Padding(0, 1).
+		Render("outline — esc back")
+
+	var lines strings.Builder
+	for _, e := range m.manifest {
+		statusIcon := "○"
+		switch e.Status {
+		case "revised":
+			statusIcon = "◑"
+		case "done":
+			statusIcon = "●"
+		}
+		lines.WriteString(fmt.Sprintf("%s  %s  %s words\n",
+			statusIcon, e.Title, wordCountFmt(e.WordCount)))
+	}
+
+	return lipgloss.JoinVertical(
+		lipgloss.Top,
+		header,
+		lipgloss.NewStyle().
+			Width(m.width).
+			Height(m.height-2).
+			Padding(0, 1).
+			Render(lines.String()),
+		StyleHelp.Width(m.width).Render("esc back"),
 	)
 }
 

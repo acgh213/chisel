@@ -29,6 +29,21 @@ chisel uses [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.0.0] — 2026-05-24
+
+### added
+- **phase 5 (export + polish):** Ctrl+E export to manuscript — concatenates all scenes in draft order to `exports/manuscript.md`
+- **phase 5 (export + polish):** Ctrl+B corkboard view — grid of scene cards showing title, word count, status, and first line (Scrivener-style)
+- **phase 5 (export + polish):** Ctrl+O outline view — collapsible outline showing scene titles, status icons (○ draft, ◑ revised, ● done), and word counts
+- **phase 5 (export + polish):** distraction-free mode via Ctrl+1 (editor-only) already present
+
+### planned (future phases)
+- phase 5: docx export via pandoc wrapper, vim bindings toggle, theme switching (peach/dark/light/forest/ocean), daily word goals
+- phase 6: character sheets in `characters/`, auto-linking, character view, scene notes
+- phase 7: jj backend for revision history, git→jj migration
+
+---
+
 ## [0.3.0] — 2026-05-24
 
 ### added
