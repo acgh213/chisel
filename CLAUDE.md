@@ -38,7 +38,7 @@ the Go TUI handles everything the user touches. the Python backend handles every
 6. **LLM provider-flexible.** any OpenAI-compatible endpoint works (LM Studio, llama.cpp, OpenAI, Anthropic). configured in `config.json`.
 7. **two model slots.** `llm` for general tasks (rewrite, generate, research, ask). `mirror` for stylistic analysis (fine-tuned model on the user's own writing).
 
-## project structure (planned)
+## project structure
 
 ```
 chisel/
@@ -48,23 +48,23 @@ chisel/
 ├── PLAN.md
 ├── CHANGELOG.md
 ├── CLAUDE.md              ← this file
+├── LICENSE
+├── build.ps1              # Windows build/packaging script
 ├── chisel.py              # Python backend (LLM calls, research, analysis)
-├── tui/                   # Go TUI
-│   ├── main.go
-│   ├── model.go           # root bubbletea model + state
+├── main.go                # Go entry point
+├── tui/                   # Go package
 │   ├── binder.go          # scene tree navigation
-│   ├── editor.go          # markdown editor
-│   ├── manifest.go        # JSONL read/write
 │   ├── config.go          # config.json loading
-│   ├── llm.go             # subprocess manager for chisel.py
-│   ├── history.go         # revision history (git-backed)
-│   ├── styles.go          # color tokens and common styles
-│   └── themes/            # theme definitions
-│       ├── peach.go
-│       ├── dark.go
-│       ├── light.go
-│       ├── forest.go
-│       └── ocean.go
+│   ├── editor.go          # markdown editor (bubbles/textarea)
+│   ├── history.go         # RevisionBackend interface + go-git implementation
+│   ├── jj.go              # jj (Jujutsu) revision backend
+│   ├── llm.go             # subprocess manager for chisel.py (NDJSON)
+│   ├── main.go            # CLI subcommand dispatch + TUI launcher
+│   ├── manifest.go        # JSONL manifest read/write
+│   ├── model.go           # root bubbletea model, state, views, key handling
+│   ├── styles.go          # colour tokens, theme definitions (5 themes)
+│   └── themes/            # (future per-file theme definitions)
+├── go.mod / go.sum
 └── scenes/                # user's writing (created by `chisel new`)
 ```
 

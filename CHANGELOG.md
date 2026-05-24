@@ -9,9 +9,10 @@ chisel uses [Semantic Versioning](https://semver.org/).
 
 ## [unreleased]
 
-### added
-- project vision, design document, goals, and implementation plan
-- repo scaffolded at [github.com/acgh213/chisel](https://github.com/acgh213/chisel)
+### planned (future)
+- quarkdown rendering (typographic features in editor display)
+- image paste from clipboard to `scenes/assets/`
+- cloud sync via file sync tools (dropbox, syncthing)
 
 ---
 
