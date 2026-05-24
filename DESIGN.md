@@ -74,7 +74,7 @@ Each line is a self-contained JSON object. The `id` is the filename stem. The ma
 
 ### research notes
 
-Research files live in `research/` and are plain markdown. The LLM populates them on request. A scene references research by the filename stem in its `research_refs` array. The research panel can show all notes tagged to the current scene.
+Research files live in `research/` and are plain markdown. The LLM populates them on request. **By default, research notes are auto-tagged to the current scene** — the scene's `research_refs` array updates automatically. A toggle in settings (`research.auto_tag`) disables this, leaving new notes untagged until the user assigns them manually. The research panel shows all notes tagged to the current scene.
 
 ## pane configurations
 
@@ -192,12 +192,23 @@ She stepped onto the platform alone.
 
 If the file has a `# Title` on the first line, the editor can pull the title from there as a fallback if the manifest entry is missing. But the manifest is the source of truth.
 
-## questions for Cassie
+## decisions
 
-1. **Scene granularity.** One scene per `.md` file, or can a single `.md` contain multiple scenes separated by a delimiter (like `---` or `##`)? I'm leaning one-per-file — it's simpler, and the binder tree provides the organizational structure.
+- **One scene per file.** Each `.md` file in `scenes/` is one scene. No delimiters, no multi-scene files. The binder tree provides organization; the filesystem stays simple.
+- **Research auto-tags to current scene by default.** A toggle in settings disables this.
+- **Built-in revision history.** Every save is tracked. See below.
+- **Export is a v1 feature.** Concatenating scenes in draft order into `exports/manuscript.md` is essential for reading the whole work.
 
-2. **Research linking.** When the LLM researches a topic, should the resulting note be auto-tagged to the *current scene* by default? Or untagged until the user assigns it?
+## revision history
 
-3. **Draft history.** Should the tool keep revision history (like git commits on save), or is that out of scope for v1? Plain markdown in a git repo already covers this if the user wants it.
+Chisel tracks every save automatically. No manual commits, no staging area — every Ctrl+S creates a snapshot. The user browses history from within the editor: jump back to any saved version of the current scene, compare side-by-side, restore a passage.
 
-4. **Export.** For the "exports/" folder — how soon do you want compilation (concatenating scenes into one manuscript.md in draft order)? That feels like a v1 feature since it's how you'd actually read the whole thing.
+### backend options
+
+Two candidates for the storage layer:
+
+**git** — ubiquitous, already installed on most systems. The tool initializes a `.git` inside the project directory on creation. Every save triggers a commit with a structured message (`scene: ch01-arrival — 1,247 words`). History browsing reads from `git log` and `git diff`. The downside: git's staging area is conceptually wrong for a writing tool where "save = snapshot" should be a single atomic operation.
+
+**jj (Jujutsu)** — Google's git-compatible VCS. No staging area, automatic commits on every change, rebase-first workflow. A save in chisel maps directly to `jj new` + `jj describe`. History browsing is cleaner because jj's log shows all snapshots as first-class commits, not a messy reflog. The downside: jj is newer and not yet universally installed.
+
+**Recommendation:** target git for v1 (zero dependency friction), but keep the revision API abstract so jj can slot in later as a configurable backend. The user-facing behavior is identical either way — Ctrl+S creates a snapshot, the history browser shows a timeline.

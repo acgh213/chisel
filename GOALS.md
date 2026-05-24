@@ -11,6 +11,7 @@ the goal for v0.1 is a tool you can actually draft in. not feature-complete, but
 - [ ] **manifest tracking.** word count updates on save, status toggles (draft → revised → done), modified timestamps
 - [ ] **pane mode switching.** `ctrl+1` / `ctrl+2` to toggle between editor-only and binder+editor
 - [ ] **file-backed.** everything saves to `.md` files on disk. close chisel, open the folder in VS Code, your writing is there
+- [ ] **revision history.** every save creates an automatic snapshot (git-backed, jj-ready API). browse history, compare versions, restore passages — all from within chisel
 
 ## medium-term (v0.2 — "think with it")
 
@@ -39,7 +40,8 @@ the mirror model gets integrated. research becomes structured.
 
 polish, export, and features that make chisel feel complete.
 
-- [ ] **export to manuscript.** concatenate scenes in draft order into one `.md` or `.docx` file
+- [ ] **export to manuscript.** concatenate scenes in draft order into one `.md` file in `exports/`
+- [ ] **export to docx.** optional MS Word output via pandoc
 - [ ] **vim bindings.** opt-in toggle in settings
 - [ ] **themes.** configurable color palettes (peach default, plus dark, light, forest, ocean)
 - [ ] **session word count.** "you wrote 847 words this session" — tracks words added since open
@@ -55,7 +57,8 @@ features that would be amazing but aren't blocking.
 
 - [ ] **quarkdown rendering.** swap the markdown renderer for something that handles typographic features (small caps, ligatures, proper quotes) — for the editor display and export
 - [ ] **image paste.** paste images from clipboard into a scene (saved to `scenes/assets/`)
-- [ ] **character sheets.** a `/characters` folder with markdown files for character notes, automatically linked when mentioned in a scene
+- [ ] **character sheets.** a `characters/` folder with markdown files for each character — name, description, arc, relationships. automatically linked when a character is mentioned in a scene. editable alongside the text in a dedicated view
+- [ ] **scene notes.** per-scene planning notes and outlines, viewable alongside the editor. scrivener's "document notes" pane, but in a terminal
 - [ ] **timeline view.** visual timeline of scenes by in-world date, not just draft order
 - [ ] **reading mode.** full-screen, justified text, no UI chrome — like a kindle
 - [ ] **sprint timer.** pomodoro-style writing sprints with word count tracking per sprint
