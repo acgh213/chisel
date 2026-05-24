@@ -167,7 +167,7 @@ Operations are triggered by keystrokes, not a chat interface. The user selects t
 Keystroke map:
   Ctrl+R     → rewrite selected text
   Ctrl+G     → generate from cursor
-  Ctrl+S     → summarize selection/scene
+  Ctrl+Shift+S → summarize selection/scene
   Ctrl+K     → ask a question (prompt bar opens at bottom)
   Ctrl+A     → analyze style of current scene (mirror)
   Ctrl+F5    → research topic (prompt bar, results in research/)

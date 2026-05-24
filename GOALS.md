@@ -20,7 +20,7 @@ llm features arrive. the tool becomes a thinking partner.
 - [ ] **Python backend.** `chisel.py` with NDJSON protocol, provider abstraction, and operation dispatch
 - [ ] **rewrite.** select text, `Ctrl+R`, get alternatives in the LLM panel
 - [ ] **generate.** `Ctrl+G` to continue from cursor with optional guidance
-- [ ] **summarize.** `Ctrl+S` to summarize selection or current scene
+- [ ] **summarize.** `Ctrl+Shift+S` to summarize selection or current scene
 - [ ] **ask.** `Ctrl+K` opens a prompt bar; ask questions about the text or research a topic
 - [ ] **mode 3.** `ctrl+3` adds the LLM panel as a third pane
 - [ ] **provider config.** `config.json` with separate slots for general LLM and mirror model
