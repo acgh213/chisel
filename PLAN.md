@@ -10,9 +10,9 @@ the foundation. nothing visible yet, but everything after builds on it.
   - `scenes/` directory
   - `research/` directory
   - `exports/` directory
-  - `.gitignore` (ignore exports, keep everything else)
-  - `git init` + initial commit
-- [ ] **config loading.** read `config.json` into Go structs. default values for missing fields
+  - `.gitignore` — ignores `exports/` and `config.json`; commits everything else
+  - git repo init + initial empty commit (via `go-git`, no shelling out to git CLI)
+- [ ] **config loading.** read `config.json` into Go structs. default values for missing fields. `config.json` schema: `llm` and `mirror` slots (each with `api_base`, `model`, `max_tokens`, `temperature`), plus `history.backend` and `editor` settings
 - [ ] **manifest I/O.** read/write JSONL manifest. load into memory on open, flush on change
 - [ ] **Go module init.** `go mod init github.com/acgh213/chisel`, bubbletea dependency, project structure:
   ```
@@ -25,7 +25,7 @@ the foundation. nothing visible yet, but everything after builds on it.
   ├── config.go
   └── styles.go
   ```
-- [ ] **verify.** `go build` produces `chisel.exe`. `chisel new test-project` creates a valid directory
+- [ ] **verify.** `go build` produces `chisel` (`chisel.exe` on Windows). `chisel new test-project` creates a valid directory
 
 ## phase 1: binder + editor (v0.1.0)
 
@@ -42,9 +42,10 @@ the core writing experience. you can create scenes, write in them, and navigate 
 
 ## phase 2: revision history (v0.1.0 cont.)
 
-every save is a snapshot. no manual commits.
+every save is a snapshot. no manual commits. uses `go-git` — no shelling out to the git CLI.
 
-- [ ] **auto-commit on save.** `git add -A && git commit -m "scene: {id} — {word_count} words"`
+- [ ] **RevisionBackend interface.** define `Save(path, message)`, `Log(path)`, `Diff(path, rev1, rev2)`, `Restore(path, rev)` error — abstract so jj can slot in later (v1.2)
+- [ ] **go-git backend.** implement `RevisionBackend` with `go-git`: auto-commit on every Ctrl+S with message `"scene: {id} — {word_count} words"`
 - [ ] **history browser.** `Ctrl+H` opens history sidebar for current scene — list of save points with timestamps and word counts
 - [ ] **diff view.** select two snapshots, see side-by-side diff of the scene
 - [ ] **restore.** restore selected passage or full scene from any snapshot
@@ -60,7 +61,7 @@ the Python backend wakes up. models become reachable.
 - [ ] **provider config.** separate `llm` and `mirror` slots in `config.json`
 - [ ] **rewrite.** select text, `Ctrl+R` → alternatives in LLM panel
 - [ ] **generate.** `Ctrl+G` → continue from cursor with optional guidance
-- [ ] **summarize.** `Ctrl+S` → summary of selection or current scene
+- [ ] **summarize.** `Ctrl+Shift+S` → summary of selection or current scene (Ctrl+S is reserved for save — see phase 1)
 - [ ] **ask.** `Ctrl+K` → prompt bar opens, response streams to LLM panel
 - [ ] **pane mode 3.** `ctrl+3` — binder + editor + LLM panel
 - [ ] **streaming.** tokens appear in LLM panel as they arrive, not all at once
@@ -118,9 +119,12 @@ jj replaces git for revision history.
 
 **Python** (LLM backend):
 - `openai` (API client — works with LM Studio, llama.cpp, OpenAI, Anthropic)
-- `pillow` (image handling, future-proofing)
 
 **System:**
-- `git` (in PATH, for revision history v0.1-v1.1)
-- `jj` (optional, v1.2)
 - `pandoc` (optional, for .docx export)
+- `jj` (optional, v1.2)
+
+## platform notes
+
+- **Windows compatibility:** all file paths use Go's `filepath` package (never hardcoded separators). `os.Executable()` locates `chisel.py` relative to the binary at runtime. Reserved Windows characters (`\ / : * ? " < > |`) stripped from folder and scene names.
+- **Go module structure:** root module is `github.com/acgh213/chisel`. Go source lives in `tui/` package under root. `chisel.py` lives at repo root, found at runtime via `os.Executable()`.

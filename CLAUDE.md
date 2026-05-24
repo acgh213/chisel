@@ -62,7 +62,9 @@ chisel/
 │   └── themes/            # theme definitions
 │       ├── peach.go
 │       ├── dark.go
-│       └── forest.go
+│       ├── light.go
+│       ├── forest.go
+│       └── ocean.go
 └── scenes/                # user's writing (created by `chisel new`)
 ```
 
@@ -145,12 +147,13 @@ all communication between the TUI and Python backend uses NDJSON over stdin/stdo
 follow PLAN.md. the phases are ordered by dependency:
 
 0. scaffolding (project creation, config, manifest I/O)
-1. binder + editor (writing experience, revision history)
-2. llm integration (Python backend, rewrite/generate/summarize/ask)
-3. mirror + research (style analysis, research gathering)
-4. export + polish (manuscript export, themes, corkboard)
-5. character + scene notes (character sheets, scene notes)
-6. jj backend (jj revision history)
+1. binder + editor (writing experience)
+2. revision history (go-git auto-commit, history browser, diff/restore)
+3. llm integration (Python backend, rewrite/generate/summarize/ask)
+4. mirror + research (style analysis, research gathering)
+5. export + polish (manuscript export, themes, corkboard)
+6. character + scene notes (character sheets, scene notes)
+7. jj backend (jj revision history)
 
 do not skip ahead. each phase depends on the one before it.
 
