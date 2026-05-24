@@ -41,6 +41,7 @@ chisel uses [Semantic Versioning](https://semver.org/).
 - **phase 6 (characters):** `characters/` directory auto-created on `chisel new`; Ctrl+Shift+C opens character sheet browser reading .md profiles with name, description, arc, and relationships sections
 - **phase 6 (scene notes):** Ctrl+Shift+N edits per-scene planning notes stored in manifest `notes` field
 - **phase 6 (timeline):** Ctrl+L timeline view — visual scene list with tree markers (├── └──) showing status, word count, and modification date
+- **phase 5 (reading):** Ctrl+Shift+R reading mode — full-screen, no chrome, any key exits
 - **phase 7 (jj backend):** `JJBackend` implementing `RevisionBackend` — uses `jj` CLI for describe, new, log, diff, and file-show; auto-detected when `history.backend` is `"jj"` in config
 - **phase 7 (migration):** git→jj migration path: change `history.backend` in config.json, restart chisel
 
