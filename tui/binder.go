@@ -123,7 +123,6 @@ func scanDir(root, current string, depth int) []*SceneNode {
 		fullPath := filepath.Join(current, name)
 		relPath, _ := filepath.Rel(filepath.Dir(root), fullPath)
 		relPath = filepath.ToSlash(relPath)
-		relPath = "scenes/" + relPath
 
 		if e.IsDir() {
 			children := scanDir(root, fullPath, depth+1)

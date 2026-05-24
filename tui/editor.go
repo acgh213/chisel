@@ -41,13 +41,9 @@ func NewEditorModel() EditorModel {
 
 // Update delegates key messages to the textarea and tracks modification state.
 func (e EditorModel) Update(msg tea.Msg) (EditorModel, tea.Cmd) {
-	switch msg.(type) {
-	case tea.KeyMsg:
-		var cmd tea.Cmd
-		e.textarea, cmd = e.textarea.Update(msg)
-		return e, cmd
-	}
-	return e, nil
+	var cmd tea.Cmd
+	e.textarea, cmd = e.textarea.Update(msg)
+	return e, cmd
 }
 
 // ---------------------------------------------------------------------------

@@ -229,11 +229,11 @@ func NewModel(projectDir string) Model {
 	// Set daily goal.
 	m.dailyGoalTarget = cfg.Goals.DailyWordTarget
 
-	// Select the first scene if one exists.
+	// Select the first scene if one exists (side-effect only; Blink is returned via Init).
 	if len(m.binder.linear) > 0 {
 		for _, n := range m.binder.linear {
 			if !n.IsDir {
-				m.selectScene(n)
+				_ = m.selectScene(n)
 				break
 			}
 		}
@@ -247,7 +247,10 @@ func NewModel(projectDir string) Model {
 // ---------------------------------------------------------------------------
 
 func (m Model) Init() tea.Cmd {
-	return tickCmd()
+	return tea.Batch(
+		tickCmd(),
+		func() tea.Msg { return textarea.Blink() },
+	)
 }
 
 // ---------------------------------------------------------------------------
@@ -402,14 +405,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.handleLLMResponse(msg)
 	}
 
-	// Delegate to focused component.
+	// Delegate to focused component. Return the Cmd so the textarea
+	// receives BlinkMsg and other internal messages.
 	var cmd tea.Cmd
 	if m.focus == focusEditor {
 		m.editor, cmd = m.editor.Update(msg)
 	} else {
 		m.binder, cmd = m.binder.Update(msg)
 	}
-
 	return m, cmd
 }
 
@@ -535,14 +538,16 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 
 	// Editor-local shortcuts.
 	if m.focus == focusEditor {
-		// Let the textarea handle its own keys.
-		m.editor, _ = m.editor.Update(msg)
+		// Let the textarea handle its own keys. Return its Cmd so cursor
+		// blinks and internal messages are processed.
+		var cmd tea.Cmd
+		m.editor, cmd = m.editor.Update(msg)
 		if m.editor.textarea.Value() != m.editor.savedContent {
 			m.editor.modified = true
 		} else {
 			m.editor.modified = false
 		}
-		return nil
+		return cmd
 	}
 
 	return nil
@@ -677,8 +682,8 @@ func (m *Model) deleteSceneDialog() tea.Cmd {
 	m.confirm = &confirmDialog{
 		message: fmt.Sprintf("delete %s? (y/n)", name),
 		onYes: func() tea.Msg {
-			cmd := m.deleteScene(node)
-			return cmd()
+			_ = m.deleteScene(node)
+			return nil
 		},
 	}
 	return nil
@@ -1726,6 +1731,9 @@ func (m Model) renderCorkboard() string {
 		cols = 2
 	}
 	cardWidth := m.width/cols - 2
+	if cardWidth < 20 {
+		cardWidth = 20
+	}
 
 	for _, e := range m.manifest {
 		content, _ := loadSceneFile(m.projectDir, e.File)
@@ -1807,8 +1815,12 @@ func (m Model) renderTimeline() string {
 		case "done":
 			statusIcon = "●"
 		}
+		date := e.Modified
+		if len(date) >= 10 {
+			date = date[:10]
+		}
 		lines.WriteString(fmt.Sprintf("%s %s %s  %s words  %s\n",
-			marker, statusIcon, e.Title, wordCountFmt(e.WordCount), e.Modified[:10]))
+			marker, statusIcon, e.Title, wordCountFmt(e.WordCount), date))
 	}
 
 	return lipgloss.JoinVertical(
