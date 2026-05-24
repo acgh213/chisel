@@ -43,9 +43,10 @@ type Model struct {
 	config     Config
 	manifest   []ManifestEntry
 
-	binder  BinderModel
-	editor  EditorModel
-	backend RevisionBackend
+	binder    BinderModel
+	editor    EditorModel
+	backend   RevisionBackend
+	llmClient *LLMClient
 
 	mode  int // 1 = editor-only, 2 = binder+editor, 3 = binder+editor+llm
 	focus FocusTarget
@@ -53,8 +54,14 @@ type Model struct {
 	confirm     *confirmDialog
 	promptInput textinput.Model
 	prompting   bool
+	promptKind  string // "scene" or "ask"
 	statusMsg   string
 	statusTimer int // ticks remaining; 0 = clear
+
+	// LLM panel state
+	llmPanel     strings.Builder
+	llmStreaming bool
+	llmChan      <-chan LLMResponse
 
 	width  int
 	height int
@@ -83,8 +90,13 @@ func NewModel(projectDir string) Model {
 
 	backend, err := NewGitBackend(projectDir)
 	if err != nil {
-		// Project might not have a git repo yet — that's ok for now.
 		backend = nil
+	}
+
+	llmClient, err := NewLLMClient(projectDir)
+	if err != nil {
+		// LLM backend not available — TUI still works without it.
+		llmClient = nil
 	}
 
 	pi := textinput.New()
@@ -100,6 +112,7 @@ func NewModel(projectDir string) Model {
 		binder:        NewBinderModel(projectDir, manifest),
 		editor:        NewEditorModel(),
 		backend:       backend,
+		llmClient:     llmClient,
 		mode:          2,
 		focus:         focusEditor,
 		promptInput:   pi,
@@ -131,6 +144,12 @@ func (m Model) Init() tea.Cmd {
 // ---------------------------------------------------------------------------
 // tick
 // ---------------------------------------------------------------------------
+
+// llmResponseMsg carries a response line from the LLM backend.
+type llmResponseMsg struct {
+	resp LLMResponse
+	err  error
+}
 
 type tickMsg struct{}
 
@@ -177,11 +196,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyMsg:
 			switch msg.String() {
 			case "enter":
-				name := m.promptInput.Value()
+				value := m.promptInput.Value()
+				kind := m.promptKind
 				m.prompting = false
 				m.promptInput.Reset()
-				if name != "" {
-					return m, m.createScene(name)
+				if value != "" {
+					if kind == "ask" {
+						return m, m.llmAsk(value)
+					}
+					return m, m.createScene(value)
 				}
 				return m, nil
 			case "esc":
@@ -231,6 +254,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, tickCmd()
+
+	case llmResponseMsg:
+		return m, m.handleLLMResponse(msg)
 	}
 
 	// Delegate to focused component.
@@ -270,6 +296,14 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		return m.saveScene()
 	case "ctrl+h":
 		return m.openHistory()
+	case "ctrl+r":
+		return m.llmRewrite()
+	case "ctrl+g":
+		return m.llmGenerate()
+	case "ctrl+shift+s":
+		return m.llmSummarize()
+	case "ctrl+k":
+		return m.llmAskPrompt()
 	case "tab":
 		if m.mode >= 2 {
 			if m.focus == focusEditor {
@@ -415,6 +449,9 @@ func (m *Model) saveScene() tea.Cmd {
 
 func (m *Model) newSceneDialog() tea.Cmd {
 	m.prompting = true
+	m.promptKind = "scene"
+	m.promptInput.Placeholder = "scene-name"
+	m.promptInput.Prompt = "new scene: "
 	m.promptInput.Focus()
 	return textinput.Blink
 }
@@ -687,6 +724,136 @@ func (m *Model) historyRestore() tea.Cmd {
 }
 
 // ---------------------------------------------------------------------------
+// llm operations
+// ---------------------------------------------------------------------------
+
+func (m *Model) llmRewrite() tea.Cmd {
+	if m.llmClient == nil {
+		m.setStatus("LLM backend not available")
+		return nil
+	}
+	text := m.editor.textarea.Value()
+	if text == "" {
+		return nil
+	}
+	// Use selected text if available, otherwise use full scene.
+	// textarea doesn't expose selection — use the full text for now.
+	return m.sendLLM(LLMRequest{
+		Op:   "rewrite",
+		Text: text,
+	})
+}
+
+func (m *Model) llmGenerate() tea.Cmd {
+	if m.llmClient == nil {
+		m.setStatus("LLM backend not available")
+		return nil
+	}
+	text := m.editor.textarea.Value()
+	return m.sendLLM(LLMRequest{
+		Op:      "generate",
+		Text:    text,
+		Guidance: "",
+	})
+}
+
+func (m *Model) llmSummarize() tea.Cmd {
+	if m.llmClient == nil {
+		m.setStatus("LLM backend not available")
+		return nil
+	}
+	text := m.editor.textarea.Value()
+	if text == "" {
+		return nil
+	}
+	return m.sendLLM(LLMRequest{
+		Op:   "summarize",
+		Text: text,
+	})
+}
+
+func (m *Model) llmAskPrompt() tea.Cmd {
+	if m.llmClient == nil {
+		m.setStatus("LLM backend not available")
+		return nil
+	}
+	m.prompting = true
+	m.promptKind = "ask"
+	m.promptInput.Placeholder = "ask about your text..."
+	m.promptInput.Prompt = "ask: "
+	m.promptInput.Focus()
+	return textinput.Blink
+}
+
+func (m *Model) llmAsk(question string) tea.Cmd {
+	return m.sendLLM(LLMRequest{
+		Op:       "ask",
+		Question: question,
+		Text:     m.editor.textarea.Value(),
+	})
+}
+
+func (m *Model) sendLLM(req LLMRequest) tea.Cmd {
+	// Switch to mode 3 so the user sees the LLM panel.
+	if m.mode < 3 {
+		m.mode = 3
+		m.editor.textarea.SetWidth(m.editorWidth())
+	}
+
+	// Clear previous panel content and show a loading indicator.
+	m.llmPanel.Reset()
+	fmt.Fprintf(&m.llmPanel, "▸ %s ...\n", req.Op)
+	m.llmStreaming = true
+
+	ch, err := m.llmClient.Send(req)
+	if err != nil {
+		m.llmPanel.WriteString(fmt.Sprintf("error: %v\n", err))
+		m.llmStreaming = false
+		return nil
+	}
+
+	m.llmChan = ch
+	return m.awaitLLMResponse()
+}
+
+func (m *Model) awaitLLMResponse() tea.Cmd {
+	return func() tea.Msg {
+		resp, ok := <-m.llmChan
+		if !ok {
+			return llmResponseMsg{err: fmt.Errorf("channel closed")}
+		}
+		return llmResponseMsg{resp: resp}
+	}
+}
+
+func (m *Model) handleLLMResponse(msg llmResponseMsg) tea.Cmd {
+	if msg.err != nil {
+		m.llmPanel.WriteString(fmt.Sprintf("error: %v\n", msg.err))
+		m.llmStreaming = false
+		return nil
+	}
+
+	resp := msg.resp
+
+	switch resp.Status {
+	case "streaming":
+		m.llmPanel.WriteString(resp.Result)
+	case "ok":
+		m.llmPanel.WriteString("\n")
+		m.llmStreaming = false
+	case "error":
+		m.llmPanel.WriteString(fmt.Sprintf("error: %s\n", resp.Result))
+		m.llmStreaming = false
+	}
+
+	// If still streaming, request the next response.
+	if m.llmStreaming {
+		return m.awaitLLMResponse()
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
 // status
 // ---------------------------------------------------------------------------
 
@@ -785,15 +952,19 @@ func (m Model) renderMode3() string {
 
 	binderView := m.binder.View(binderW)
 	editorView := m.renderEditor(editorW)
+	llmContent := m.llmPanel.String()
+	if llmContent == "" {
+		llmContent = "LLM panel\n(no output yet)"
+	}
 	llmView := lipgloss.NewStyle().
 		Width(llmW).
 		Height(m.height-2).
 		BorderLeft(true).
 		BorderStyle(lipgloss.NormalBorder()).
 		BorderForeground(ColorBorder).
-		Foreground(ColorMuted).
+		Foreground(ColorFg).
 		Padding(0, 1).
-		Render("LLM panel\n(phase 3)")
+		Render(llmContent)
 
 	binderStyled := lipgloss.NewStyle().
 		Width(binderW).

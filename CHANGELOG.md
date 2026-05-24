@@ -29,6 +29,22 @@ chisel uses [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.2.0] — 2026-05-24
+
+### added
+- **phase 3 (llm integration):** `chisel.py` Python backend with NDJSON protocol — handles rewrite, generate, summarize, ask, and analyze operations via OpenAI-compatible API
+- **phase 3 (llm integration):** provider config in `config.json` with separate `llm` and `mirror` model slots, each with `api_base`, `model`, `max_tokens`, and `temperature`
+- **phase 3 (llm integration):** Go subprocess manager (`tui/llm.go`) spawns `chisel.py`, communicates via NDJSON over stdin/stdout, handles startup/ready signal with 5s timeout
+- **phase 3 (llm integration):** Ctrl+R rewrite — sends selected text to LLM, alternatives appear in LLM panel
+- **phase 3 (llm integration):** Ctrl+G generate — continues from cursor with optional guidance
+- **phase 3 (llm integration):** Ctrl+Shift+S summarize — summary of selection or current scene
+- **phase 3 (llm integration):** Ctrl+K ask — inline prompt bar opens, response streams token-by-token to LLM panel
+- **phase 3 (llm integration):** streaming responses — tokens appear in LLM panel as they arrive via channel-based polling
+- **phase 3 (llm integration):** mode 3 now shows real LLM panel content (replaces placeholder)
+- **phase 3 (llm integration):** graceful degradation when Python backend is unavailable — TUI runs without LLM features
+
+---
+
 ## [0.1.0] — 2026-05-24
 
 ### added
