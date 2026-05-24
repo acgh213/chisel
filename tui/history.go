@@ -135,20 +135,20 @@ func (gb *GitBackend) Diff(path string, rev1, rev2 string) (string, error) {
 
 	commit1, err := gb.repo.CommitObject(hash1)
 	if err != nil {
-		return "", fmt.Errorf("resolving %s: %w", rev1[:8], err)
+		return "", fmt.Errorf("resolving %s: %w", shortHash(rev1), err)
 	}
 	commit2, err := gb.repo.CommitObject(hash2)
 	if err != nil {
-		return "", fmt.Errorf("resolving %s: %w", rev2[:8], err)
+		return "", fmt.Errorf("resolving %s: %w", shortHash(rev2), err)
 	}
 
 	tree1, err := commit1.Tree()
 	if err != nil {
-		return "", fmt.Errorf("tree %s: %w", rev1[:8], err)
+		return "", fmt.Errorf("tree %s: %w", shortHash(rev1), err)
 	}
 	tree2, err := commit2.Tree()
 	if err != nil {
-		return "", fmt.Errorf("tree %s: %w", rev2[:8], err)
+		return "", fmt.Errorf("tree %s: %w", shortHash(rev2), err)
 	}
 
 	changes, err := tree1.Diff(tree2)
@@ -184,7 +184,7 @@ func (gb *GitBackend) Restore(path string, rev string) (string, error) {
 	hash := plumbing.NewHash(rev)
 	commit, err := gb.repo.CommitObject(hash)
 	if err != nil {
-		return "", fmt.Errorf("resolving %s: %w", rev[:8], err)
+		return "", fmt.Errorf("resolving %s: %w", shortHash(rev), err)
 	}
 
 	tree, err := commit.Tree()
@@ -195,7 +195,7 @@ func (gb *GitBackend) Restore(path string, rev string) (string, error) {
 	file, err := tree.File(rel)
 	if err != nil {
 		// The file might not exist in this commit — try parent.
-		return "", fmt.Errorf("finding %s in %s: %w", rel, rev[:8], err)
+		return "", fmt.Errorf("finding %s in %s: %w", rel, shortHash(rev), err)
 	}
 
 	content, err := file.Contents()

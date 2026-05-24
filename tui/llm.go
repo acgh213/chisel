@@ -44,6 +44,7 @@ type LLMClient struct {
 	stdout *bufio.Scanner
 	mu     sync.Mutex
 	ready  bool
+	sendMu sync.Mutex // serialises Send calls so goroutines don't race on stdout
 }
 
 // NewLLMClient spawns chisel.py as a subprocess. The project dir is passed
@@ -146,27 +147,36 @@ func findChiselPy(projectDir string) string {
 
 // Send writes a request to chisel.py and returns a channel that receives
 // every response line (including streaming chunks) and closes when the
-// final "ok" or "error" response arrives.
+// final "ok" or "error" response arrives. Only one Send may be in flight
+// at a time — concurrent calls block on sendMu.
 func (lc *LLMClient) Send(req LLMRequest) (<-chan LLMResponse, error) {
-	lc.mu.Lock()
-	defer lc.mu.Unlock()
+	lc.sendMu.Lock()
 
+	lc.mu.Lock()
 	if !lc.ready {
+		lc.mu.Unlock()
+		lc.sendMu.Unlock()
 		return nil, fmt.Errorf("llm client not ready")
 	}
+	lc.mu.Unlock()
 
 	data, err := json.Marshal(req)
 	if err != nil {
+		lc.sendMu.Unlock()
 		return nil, fmt.Errorf("marshalling request: %w", err)
 	}
 
 	if _, err := lc.stdin.Write(append(data, '\n')); err != nil {
+		lc.sendMu.Unlock()
 		return nil, fmt.Errorf("writing to chisel.py: %w", err)
 	}
 
 	ch := make(chan LLMResponse, 64)
 	go func() {
-		defer close(ch)
+		defer func() {
+			close(ch)
+			lc.sendMu.Unlock()
+		}()
 		for lc.stdout.Scan() {
 			line := lc.stdout.Text()
 			var resp LLMResponse

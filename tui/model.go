@@ -98,6 +98,13 @@ func parseCharacterSheet(content, filePath string) CharacterSheet {
 	return cs
 }
 
+// renameState captures the old scene info before the user picks a new name.
+type renameState struct {
+	projectDir string
+	oldPath    string
+	oldID      string
+}
+
 // ---------------------------------------------------------------------------
 // model
 // ---------------------------------------------------------------------------
@@ -167,6 +174,9 @@ type Model struct {
 
 	// reading mode
 	readingMode bool
+
+	// rename state
+	renameState *renameState
 
 	quitting bool
 }
@@ -349,6 +359,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						return m, nil
 					} else if kind == "notes" {
 						return m, m.saveSceneNotes(value)
+					} else if kind == "rename" {
+						return m, m.doRenameScene(value)
 					}
 					return m, m.createScene(value)
 				}
@@ -724,20 +736,45 @@ func (m *Model) renameSceneDialog() tea.Cmd {
 		return nil
 	}
 
+	// Capture node for the prompt callback.
 	oldName := node.Name
-	newName := strings.TrimSuffix(oldName, ".md") + "-renamed.md"
 	oldPath := node.RelPath
-	newPath := "scenes/" + newName
 	oldID := strings.TrimSuffix(oldName, ".md")
+	m.prompting = true
+	m.promptKind = "rename"
+	m.promptInput.Placeholder = oldID
+	m.promptInput.Prompt = "rename to: "
+	m.promptInput.SetValue(oldID)
+	m.promptInput.Focus()
+	m.renameState = &renameState{
+		projectDir: m.projectDir,
+		oldPath:    oldPath,
+		oldID:      oldID,
+	}
+	return textinput.Blink
+}
+
+func (m *Model) doRenameScene(newName string) tea.Cmd {
+	if m.renameState == nil {
+		return nil
+	}
+	rs := m.renameState
+	m.renameState = nil
+
+	newName = sanitiseName(newName)
+	if !strings.HasSuffix(newName, ".md") {
+		newName += ".md"
+	}
+	newPath := "scenes/" + newName
 	newID := strings.TrimSuffix(newName, ".md")
 
-	if err := renameSceneFile(m.projectDir, oldPath, newPath); err != nil {
+	if err := renameSceneFile(m.projectDir, rs.oldPath, newPath); err != nil {
 		m.setStatus("error renaming: " + err.Error())
 		return nil
 	}
 
 	for i, e := range m.manifest {
-		if e.ID == oldID {
+		if e.ID == rs.oldID {
 			m.manifest[i].ID = newID
 			m.manifest[i].File = newPath
 			m.manifest[i].Title = newID
@@ -746,12 +783,12 @@ func (m *Model) renameSceneDialog() tea.Cmd {
 	}
 	_ = SaveManifest(m.projectDir, m.manifest)
 
-	if m.editor.currentFile == oldPath {
+	if m.editor.currentFile == rs.oldPath {
 		m.editor.currentFile = newPath
 	}
 
 	m.binder = NewBinderModel(m.projectDir, m.manifest)
-	m.setStatus(fmt.Sprintf("renamed %s → %s", oldName, newName))
+	m.setStatus(fmt.Sprintf("renamed %s → %s", rs.oldID, newID))
 	return nil
 }
 
@@ -869,7 +906,7 @@ func (m *Model) historyShowDiff() tea.Cmd {
 	} else {
 		// First commit — diff against empty.
 		m.historyDiff = fmt.Sprintf("initial commit\n%s\n%s",
-			cur.Hash[:8], cur.Message)
+			shortHash(cur.Hash), cur.Message)
 		return nil
 	}
 
@@ -879,7 +916,7 @@ func (m *Model) historyShowDiff() tea.Cmd {
 		return nil
 	}
 
-	m.historyDiff = fmt.Sprintf("%s ← %s\n\n%s", cur.Hash[:8], prevHash[:8], diff)
+	m.historyDiff = fmt.Sprintf("%s ← %s\n\n%s", shortHash(cur.Hash), shortHash(prevHash), diff)
 	return nil
 }
 
@@ -904,7 +941,7 @@ func (m *Model) historyRestore() tea.Cmd {
 	m.showHistory = false
 	m.historyDiff = ""
 	m.focus = focusEditor
-	m.setStatus(fmt.Sprintf("restored %s", rev.Hash[:8]))
+	m.setStatus(fmt.Sprintf("restored %s", shortHash(rev.Hash)))
 	return nil
 }
 
@@ -1245,15 +1282,20 @@ func (m *Model) toggleSprint() tea.Cmd {
 // ---------------------------------------------------------------------------
 
 func (m *Model) exportDocx() tea.Cmd {
-	// Export manuscript first.
-	m.exportManuscript()
-
+	// Export manuscript first; capture its status.
 	mdPath := filepath.Join(m.projectDir, "exports", "manuscript.md")
-	docxPath := filepath.Join(m.projectDir, "exports", "manuscript.docx")
+	if _, err := os.Stat(mdPath); os.IsNotExist(err) {
+		// Run manuscript export synchronously.
+		cmd := m.exportManuscript()
+		if cmd != nil {
+			cmd() // execute it inline — writes the file
+		}
+	}
 
-	cmd := exec.Command("pandoc", mdPath, "-o", docxPath)
-	if err := cmd.Run(); err != nil {
-		m.setStatus("docx export error: pandoc not found? " + err.Error())
+	docxPath := filepath.Join(m.projectDir, "exports", "manuscript.docx")
+	c := exec.Command("pandoc", mdPath, "-o", docxPath)
+	if out, err := c.CombinedOutput(); err != nil {
+		m.setStatus("docx error: pandoc not available? " + string(out))
 		return nil
 	}
 	m.setStatus("exported manuscript.docx")
@@ -1663,6 +1705,15 @@ func (m Model) renderStatusBar() string {
 	return barStyle.Render(left)
 }
 
+// shortHash safely returns the first 8 characters of a hash, or the full
+// hash if it's shorter (e.g., jj change IDs).
+func shortHash(h string) string {
+	if len(h) > 8 {
+		return h[:8]
+	}
+	return h
+}
+
 func (m Model) renderHistory() string {
 	// Header.
 	header := lipgloss.NewStyle().
@@ -1680,7 +1731,7 @@ func (m Model) renderHistory() string {
 			cursor = "> "
 		}
 		ts := rev.Timestamp.Format("2006-01-02 15:04")
-		shortHash := rev.Hash[:8]
+		shortHash := shortHash(rev.Hash)
 		list.WriteString(fmt.Sprintf("%s%s  %s  %s\n", cursor, shortHash, ts, rev.Message))
 	}
 
