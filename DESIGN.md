@@ -1,5 +1,10 @@
 # ✧ chisel — design document ✧
 
+> **Archival note (May 2026):** This document describes the full v1.2 vision.  
+> v0.1 has been stripped to a brutal MVP — binder + editor + save.  
+> The full v1.2 implementation lives on the `archive/chisel-full` branch.  
+> These docs serve as the north star for future versions.
+
 ## architecture
 
 ```
