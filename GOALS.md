@@ -1,5 +1,9 @@
 # ✧ chisel — goals & roadmap ✧
 
+> **Archival note (May 2026):** This document describes the v1.2 roadmap.  
+> v0.1 has been stripped to a brutal MVP — binder + editor + save.  
+> The full v1.2 implementation lives on the `archive/chisel-full` branch.  
+
 ## all goals achieved ✅
 
 Every item in the original roadmap has been implemented. See [CHANGELOG.md](CHANGELOG.md) for the full version history.

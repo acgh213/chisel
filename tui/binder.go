@@ -10,253 +10,142 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// ---------------------------------------------------------------------------
-// scene node
-// ---------------------------------------------------------------------------
-
-// SceneNode represents a node in the binder tree — either a directory or a
-// .md scene file.
-type SceneNode struct {
-	Name     string      // display name (filename or dir name)
-	RelPath  string      // relative path from project root
-	IsDir    bool
-	Children []*SceneNode
-	Expanded bool
-	Depth    int
+// fileNode represents a node in the binder tree.
+type fileNode struct {
+	name     string
+	path     string
+	isDir    bool
+	expanded bool
+	children []*fileNode
+	depth    int
 }
 
-// ---------------------------------------------------------------------------
-// binder model
-// ---------------------------------------------------------------------------
-
-// BinderModel manages the scene tree panel.
+// BinderModel is a custom file tree for navigating folders and .md files.
 type BinderModel struct {
-	nodes   []*SceneNode // root-level nodes
-	cursor  int          // index into the linearised node list
-	linear  []*SceneNode // flattened visible nodes (computed)
-	entries []ManifestEntry
+	root      string
+	nodes     []*fileNode  // root-level nodes (the tree)
+	flat      []*fileNode  // flattened visible nodes for rendering
+	cursor    int          // index in flat list
+	offset    int          // scroll offset
+	focus     bool
+	width     int
+	height    int
 }
 
-// NewBinderModel scans the scenes/ directory and builds the tree.
-func NewBinderModel(projectDir string, entries []ManifestEntry) BinderModel {
-	bm := BinderModel{
-		entries: entries,
-	}
-	bm.nodes = scanScenesDir(projectDir)
-	bm.relinearise()
-	if len(bm.linear) > 0 {
-		bm.cursor = 0
-	}
-	return bm
-}
-
-// NewBinderModelFiltered builds a binder showing only the given manifest
-// entries (used for tag filtering). Nodes not in the list are omitted.
-func NewBinderModelFiltered(projectDir string, entries []ManifestEntry) BinderModel {
-	bm := BinderModel{
-		entries: entries,
-	}
-	allNodes := scanScenesDir(projectDir)
-
-	// Build a set of allowed IDs.
-	allowed := make(map[string]bool, len(entries))
-	for _, e := range entries {
-		allowed[e.ID] = true
-	}
-
-	// Filter the tree.
-	bm.nodes = filterNodes(allNodes, allowed)
-	bm.relinearise()
-	if len(bm.linear) > 0 {
-		bm.cursor = 0
-	}
-	return bm
-}
-
-func filterNodes(nodes []*SceneNode, allowed map[string]bool) []*SceneNode {
-	var result []*SceneNode
-	for _, n := range nodes {
-		if n.IsDir {
-			children := filterNodes(n.Children, allowed)
-			if len(children) > 0 {
-				n.Children = children
-				result = append(result, n)
-			}
-		} else {
-			id := strings.TrimSuffix(n.Name, ".md")
-			if allowed[id] {
-				result = append(result, n)
-			}
-		}
-	}
-	return result
-}
-
-// scanScenesDir recursively reads the scenes/ directory tree.
-func scanScenesDir(projectDir string) []*SceneNode {
-	root := filepath.Join(projectDir, "scenes")
-	return scanDir(root, root, 0)
-}
-
-func scanDir(root, current string, depth int) []*SceneNode {
-	entries, err := os.ReadDir(current)
-	if err != nil {
-		return nil
-	}
-
-	// Sort: directories first, then files; alphabetical within each group.
-	sort.Slice(entries, func(i, j int) bool {
-		if entries[i].IsDir() != entries[j].IsDir() {
-			return entries[i].IsDir()
-		}
-		return strings.ToLower(entries[i].Name()) < strings.ToLower(entries[j].Name())
-	})
-
-	var nodes []*SceneNode
-	for _, e := range entries {
-		name := e.Name()
-
-		// Skip hidden files/dirs and non-.md files.
-		if strings.HasPrefix(name, ".") {
-			continue
-		}
-		fullPath := filepath.Join(current, name)
-		relPath, _ := filepath.Rel(filepath.Dir(root), fullPath)
-		relPath = filepath.ToSlash(relPath)
-
-		if e.IsDir() {
-			children := scanDir(root, fullPath, depth+1)
-			nodes = append(nodes, &SceneNode{
-				Name:     name,
-				RelPath:  relPath,
-				IsDir:    true,
-				Children: children,
-				Expanded: depth < 1, // auto-expand first level
-				Depth:    depth,
-			})
-		} else if strings.HasSuffix(name, ".md") {
-			nodes = append(nodes, &SceneNode{
-				Name:    name,
-				RelPath: relPath,
-				IsDir:   false,
-				Depth:   depth,
-			})
-		}
-	}
-	return nodes
-}
-
-// ---------------------------------------------------------------------------
-// linearisation
-// ---------------------------------------------------------------------------
-
-func (bm *BinderModel) relinearise() {
-	bm.linear = nil
-	flatten(bm.nodes, &bm.linear)
-	// Clamp cursor.
-	if bm.cursor >= len(bm.linear) {
-		bm.cursor = len(bm.linear) - 1
-	}
-	if bm.cursor < 0 {
-		bm.cursor = 0
+// NewBinder creates a binder model rooted at the given directory.
+func NewBinder(root string) BinderModel {
+	return BinderModel{
+		root: root,
 	}
 }
 
-func flatten(nodes []*SceneNode, out *[]*SceneNode) {
-	for _, n := range nodes {
-		*out = append(*out, n)
-		if n.IsDir && n.Expanded && len(n.Children) > 0 {
-			flatten(n.Children, out)
-		}
-	}
-}
-
-// ---------------------------------------------------------------------------
-// accessors
-// ---------------------------------------------------------------------------
-
-func (bm BinderModel) selectedNode() *SceneNode {
-	if bm.cursor < 0 || bm.cursor >= len(bm.linear) {
-		return nil
-	}
-	return bm.linear[bm.cursor]
-}
-
-func (bm BinderModel) lookupEntry(name string) *ManifestEntry {
-	id := strings.TrimSuffix(name, ".md")
-	for i := range bm.entries {
-		if bm.entries[i].ID == id {
-			return &bm.entries[i]
-		}
-	}
+// Init initializes the binder model.
+func (m BinderModel) Init() tea.Cmd {
 	return nil
 }
 
-// ---------------------------------------------------------------------------
-// update
-// ---------------------------------------------------------------------------
+// Update handles keyboard input for the binder.
+func (m BinderModel) Update(msg tea.Msg) (BinderModel, tea.Cmd) {
+	if !m.focus {
+		return m, nil
+	}
 
-func (bm BinderModel) Update(msg tea.Msg) (BinderModel, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "up":
-			if bm.cursor > 0 {
-				bm.cursor--
+	keyMsg, ok := msg.(tea.KeyMsg)
+	if !ok {
+		return m, nil
+	}
+
+	switch keyMsg.String() {
+	case "j", "down":
+		if m.cursor < len(m.flat)-1 {
+			m.cursor++
+		}
+	case "k", "up":
+		if m.cursor > 0 {
+			m.cursor--
+		}
+	case "enter", " ":
+		if m.cursor >= 0 && m.cursor < len(m.flat) {
+			node := m.flat[m.cursor]
+			if node.isDir {
+				node.expanded = !node.expanded
+				m.rebuildFlat()
 			}
-		case "down":
-			if bm.cursor < len(bm.linear)-1 {
-				bm.cursor++
+		}
+	case "l", "right":
+		// Expand selected folder or no-op.
+		if m.cursor >= 0 && m.cursor < len(m.flat) {
+			node := m.flat[m.cursor]
+			if node.isDir && !node.expanded {
+				node.expanded = true
+				m.rebuildFlat()
 			}
-		case "left":
-			node := bm.selectedNode()
-			if node != nil && node.IsDir && node.Expanded {
-				node.Expanded = false
-				bm.relinearise()
-			}
-		case "right":
-			node := bm.selectedNode()
-			if node != nil && node.IsDir && !node.Expanded {
-				node.Expanded = true
-				bm.relinearise()
+		}
+	case "h", "left":
+		// Collapse selected folder.
+		if m.cursor >= 0 && m.cursor < len(m.flat) {
+			node := m.flat[m.cursor]
+			if node.isDir && node.expanded {
+				node.expanded = false
+				m.rebuildFlat()
 			}
 		}
 	}
-	return bm, nil
+
+	// Keep cursor in visible range.
+	m.scrollToCursor()
+
+	return m, nil
 }
 
-// ---------------------------------------------------------------------------
-// view
-// ---------------------------------------------------------------------------
-
-func (bm BinderModel) View(width int) string {
-	if len(bm.linear) == 0 {
-		return lipgloss.NewStyle().
-			Width(width).
-			Foreground(ColorMuted).
-			Padding(0, 1).
-			Render("(empty)")
+// View renders the binder tree.
+func (m BinderModel) View() string {
+	style := BinderStyle.Width(m.width).Height(m.height)
+	if m.focus {
+		style = FocusedStyle(style)
 	}
 
-	var sb strings.Builder
-	for i, node := range bm.linear {
-		line := bm.renderNode(node, i == bm.cursor)
-		sb.WriteString(line)
-		sb.WriteRune('\n')
+	if len(m.flat) == 0 {
+		empty := lipgloss.NewStyle().
+			Foreground(ColorDim).
+			Padding(1).
+			Render("(empty project)")
+		return style.Render(empty)
 	}
 
-	return lipgloss.NewStyle().
-		Width(width).
-		MaxHeight(20). // will be constrained by parent
-		Render(sb.String())
+	// Render visible window of flattened nodes.
+	visibleHeight := m.height - 2 // account for border/padding
+	if visibleHeight < 1 {
+		visibleHeight = 1
+	}
+
+	start := m.offset
+	end := start + visibleHeight
+	if end > len(m.flat) {
+		end = len(m.flat)
+		start = end - visibleHeight
+		if start < 0 {
+			start = 0
+		}
+	}
+
+	var lines []string
+	for i := start; i < end; i++ {
+		node := m.flat[i]
+		line := m.renderNode(node, i == m.cursor)
+		lines = append(lines, line)
+	}
+
+	return style.Render(lipgloss.JoinVertical(lipgloss.Left, lines...))
 }
 
-func (bm BinderModel) renderNode(node *SceneNode, selected bool) string {
-	indent := strings.Repeat("  ", node.Depth)
+// renderNode renders a single tree node line.
+func (m BinderModel) renderNode(node *fileNode, selected bool) string {
+	indent := strings.Repeat("  ", node.depth)
 
 	var prefix string
-	if node.IsDir {
-		if node.Expanded {
+	if node.isDir {
+		if node.expanded {
 			prefix = "▾ "
 		} else {
 			prefix = "▸ "
@@ -265,34 +154,165 @@ func (bm BinderModel) renderNode(node *SceneNode, selected bool) string {
 		prefix = "  "
 	}
 
-	name := node.Name
-	if !node.IsDir {
-		// Strip .md extension for display.
-		name = strings.TrimSuffix(name, ".md")
-		// Append status indicator.
-		if entry := bm.lookupEntry(node.Name); entry != nil {
-			switch entry.Status {
-			case "revised":
-				name += " ·"
-			case "done":
-				name += " ✓"
-			default:
-				name += "  "
-			}
-		} else {
-			name += "  "
+	display := indent + prefix + node.name
+
+	if selected && m.focus {
+		return TreeSelectedStyle.Render(display)
+	}
+	if node.isDir {
+		return TreeFolderStyle.Render(display)
+	}
+	return TreeFileStyle.Render(display)
+}
+
+// SelectedFile returns the path of the currently selected node if it's an .md file.
+func (m BinderModel) SelectedFile() string {
+	if m.cursor < 0 || m.cursor >= len(m.flat) {
+		return ""
+	}
+	node := m.flat[m.cursor]
+	if node.isDir {
+		return ""
+	}
+	return node.path
+}
+
+// IsDirSelected returns true if the selected node is a directory.
+func (m BinderModel) IsDirSelected() bool {
+	if m.cursor < 0 || m.cursor >= len(m.flat) {
+		return false
+	}
+	return m.flat[m.cursor].isDir
+}
+
+// Focus sets focus state.
+func (m *BinderModel) Focus(v bool) {
+	m.focus = v
+}
+
+// SetSize sets the binder dimensions.
+func (m *BinderModel) SetSize(w, h int) {
+	m.width = w
+	m.height = h
+}
+
+// Refresh rescans the root directory and rebuilds the tree.
+func (m *BinderModel) Refresh() error {
+	nodes, err := buildFileTree(m.root, m.root, 0)
+	if err != nil {
+		return err
+	}
+	m.nodes = nodes
+	m.rebuildFlat()
+	if m.cursor >= len(m.flat) {
+		m.cursor = len(m.flat) - 1
+	}
+	if m.cursor < 0 {
+		m.cursor = 0
+	}
+	return nil
+}
+
+// rebuildFlat rebuilds the flat list from the tree nodes.
+func (m *BinderModel) rebuildFlat() {
+	m.flat = nil
+	flattenNodes(m.nodes, &m.flat)
+}
+
+// scrollToCursor keeps the cursor visible.
+func (m *BinderModel) scrollToCursor() {
+	visibleHeight := m.height - 2
+	if visibleHeight < 1 {
+		visibleHeight = 1
+	}
+	if m.cursor < m.offset {
+		m.offset = m.cursor
+	}
+	if m.cursor >= m.offset+visibleHeight {
+		m.offset = m.cursor - visibleHeight + 1
+	}
+	if m.offset < 0 {
+		m.offset = 0
+	}
+}
+
+// flattenNodes recursively flattens visible nodes into the flat list.
+func flattenNodes(nodes []*fileNode, flat *[]*fileNode) {
+	for _, n := range nodes {
+		*flat = append(*flat, n)
+		if n.isDir && n.expanded && len(n.children) > 0 {
+			flattenNodes(n.children, flat)
+		}
+	}
+}
+
+// buildFileTree recursively scans a directory and builds fileNode tree.
+func buildFileTree(root, dir string, depth int) ([]*fileNode, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+
+	var nodes []*fileNode
+
+	// Separate directories and .md files, sort alphabetically.
+	var dirs, mdFiles []os.DirEntry
+	for _, e := range entries {
+		name := e.Name()
+		// Skip hidden files/directories.
+		if len(name) > 0 && name[0] == '.' {
+			continue
+		}
+		if e.IsDir() {
+			dirs = append(dirs, e)
+		} else if filepath.Ext(name) == ".md" {
+			mdFiles = append(mdFiles, e)
 		}
 	}
 
-	display := indent + prefix + name
+	sort.Slice(dirs, func(i, j int) bool {
+		return strings.ToLower(dirs[i].Name()) < strings.ToLower(dirs[j].Name())
+	})
+	sort.Slice(mdFiles, func(i, j int) bool {
+		return strings.ToLower(mdFiles[i].Name()) < strings.ToLower(mdFiles[j].Name())
+	})
 
-	style := lipgloss.NewStyle()
-	if selected {
-		style = style.Background(ColorHighlight).Foreground(ColorAccent)
-	}
-	if node.IsDir {
-		style = style.Foreground(ColorMuted)
+	// Add directories.
+	for _, e := range dirs {
+		fullPath := filepath.Join(dir, e.Name())
+		name := e.Name()
+
+		children, err := buildFileTree(root, fullPath, depth+1)
+		if err != nil {
+			children = nil // skip unreadable directories
+		}
+
+		node := &fileNode{
+			name:     name,
+			path:     fullPath,
+			isDir:    true,
+			expanded: false,
+			children: children,
+			depth:    depth,
+		}
+		nodes = append(nodes, node)
 	}
 
-	return style.Render(display)
+	// Add .md files.
+	for _, e := range mdFiles {
+		fullPath := filepath.Join(dir, e.Name())
+		name := e.Name()
+		// Strip .md extension for display.
+		displayName := name[:len(name)-3]
+
+		node := &fileNode{
+			name:  displayName,
+			path:  fullPath,
+			isDir: false,
+			depth: depth,
+		}
+		nodes = append(nodes, node)
+	}
+
+	return nodes, nil
 }
