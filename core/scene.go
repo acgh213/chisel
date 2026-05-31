@@ -26,8 +26,14 @@ func LoadScene(path string) (*Scene, error) {
 	if err != nil {
 		return nil, err
 	}
-	meta, body := parseFrontmatter(string(data))
-	return &Scene{Path: path, Meta: meta, Body: body}, nil
+	return ParseScene(path, string(data)), nil
+}
+
+// ParseScene parses raw file content (frontmatter + body) into a Scene at path,
+// without touching disk. Used to load revision snapshots into the editor.
+func ParseScene(path, content string) *Scene {
+	meta, body := parseFrontmatter(content)
+	return &Scene{Path: path, Meta: meta, Body: body}
 }
 
 // Save writes the scene back to its path. If the scene carries metadata, the
