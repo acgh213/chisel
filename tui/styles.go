@@ -60,6 +60,30 @@ var (
 	DiffMetaStyle = lipgloss.NewStyle().Foreground(ColorDim)
 )
 
+// Corkboard / outliner styles (Phase 4).
+var (
+	// ViewHeaderStyle is the title row shared by the structural views.
+	ViewHeaderStyle = lipgloss.NewStyle().
+			Foreground(ColorMuted).
+			Bold(true)
+
+	// CardStyle is one index card on the corkboard. The selected card swaps its
+	// border to the accent color via CardSelectedStyle.
+	CardStyle = lipgloss.NewStyle().
+			BorderStyle(lipgloss.NormalBorder()).
+			BorderForeground(ColorBorder).
+			Padding(0, 1)
+
+	CardSelectedStyle = CardStyle.BorderForeground(ColorAccent)
+
+	CardTitleStyle    = lipgloss.NewStyle().Foreground(ColorAccent).Bold(true)
+	CardMetaStyle     = lipgloss.NewStyle().Foreground(ColorMuted)
+	CardSynopsisStyle = lipgloss.NewStyle().Foreground(ColorFg)
+
+	// MetTargetStyle marks a word count that has reached its target.
+	MetTargetStyle = lipgloss.NewStyle().Foreground(ColorGreen)
+)
+
 // Tree node styles.
 var (
 	TreeSelectedStyle = lipgloss.NewStyle().
