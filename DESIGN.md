@@ -1,9 +1,18 @@
 # ✧ chisel — design document ✧
 
-> **Archival note (May 2026):** This document describes the full v1.2 vision.  
-> v0.1 has been stripped to a brutal MVP — binder + editor + save.  
-> The full v1.2 implementation lives on the `archive/chisel-full` branch.  
-> These docs serve as the north star for future versions.
+> **Status (May 2026):** This document is the north-star vision for chisel.  
+> Features shipped through Phase 5 are marked **[shipped]** inline below.  
+> The original v1.2 full implementation lives on `archive/chisel-full` (reference only).
+
+**Shipped through Phase 5:**
+- Binder + editor TUI with stable layout ✓
+- `core/` package with zero charmbracelet imports (GUI-ready seam) ✓
+- YAML frontmatter metadata per scene ✓
+- Git-backed revision history (Ctrl+H) ✓
+- Corkboard (F2) and outliner (F3) views ✓
+- Compile / export to manuscript.md, optional .docx via pandoc (Ctrl+E) ✓
+
+**Pending:** LLM assist, character sheets, themes/goals, GUI alongside TUI.
 
 ## architecture
 
