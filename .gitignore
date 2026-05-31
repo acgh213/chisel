@@ -1,2 +1,4 @@
 chisel
 chisel.exe
+test/
+dist/
