@@ -132,7 +132,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.focus = PaneEditor
 				m.binder.Focus(false)
 				m.editor.Focus(true)
-				cmds = append(cmds, m.editor.Init()) // arm cursor blink
+				// Init() == textarea.Blink: arm the cursor blink on focus gain.
+				cmds = append(cmds, m.editor.Init())
 			} else {
 				m.focus = PaneBinder
 				m.editor.Focus(false)
@@ -162,6 +163,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.editor.Focus(true)
 					m.statusMsg = fmt.Sprintf("Opened %s", filepath.Base(path))
 					m.statusTimer = 2
+					// Init() arms the cursor blink on focus gain.
 					cmds = append(cmds, statusTick(), m.editor.Init())
 				} else {
 					// A folder (or nothing) is selected — let the binder
@@ -198,7 +200,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.newScenePrompt()
 
 		default:
-			// Pass through to focused pane.
+			// Safety net: any key without an explicit case above is forwarded
+			// to the focused pane. Keys that DO have their own case (e.g.
+			// "enter") forward to the editor themselves when focused; this
+			// catches everything else so a future key case can't silently
+			// swallow editor input.
 			if m.focus == PaneBinder {
 				var cmd tea.Cmd
 				m.binder, cmd = m.binder.Update(msg)
@@ -238,6 +244,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.editor.Focus(true)
 				m.statusMsg = "New scene created."
 				m.statusTimer = 2
+				// Init() arms the cursor blink on focus gain.
 				cmds = append(cmds, statusTick(), m.editor.Init())
 			}
 		}
