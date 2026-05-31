@@ -1,35 +1,26 @@
 package tui
 
 import (
-	"os"
-	"path/filepath"
-	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/acgh213/chisel/core"
 )
 
-// fileNode represents a node in the binder tree.
-type fileNode struct {
-	name     string
-	path     string
-	isDir    bool
-	expanded bool
-	children []*fileNode
-	depth    int
-}
-
 // BinderModel is a custom file tree for navigating folders and .md files.
+// The tree data (core.FileNode) comes from core; the binder owns only the
+// view state: cursor, scroll offset, focus, and size.
 type BinderModel struct {
-	root      string
-	nodes     []*fileNode  // root-level nodes (the tree)
-	flat      []*fileNode  // flattened visible nodes for rendering
-	cursor    int          // index in flat list
-	offset    int          // scroll offset
-	focus     bool
-	width     int
-	height    int
+	root   string
+	nodes  []*core.FileNode // root-level nodes (the tree)
+	flat   []*core.FileNode // flattened visible nodes for rendering
+	cursor int              // index in flat list
+	offset int              // scroll offset
+	focus  bool
+	width  int
+	height int
 }
 
 // NewBinder creates a binder model rooted at the given directory.
@@ -67,8 +58,8 @@ func (m BinderModel) Update(msg tea.Msg) (BinderModel, tea.Cmd) {
 	case "enter", " ":
 		if m.cursor >= 0 && m.cursor < len(m.flat) {
 			node := m.flat[m.cursor]
-			if node.isDir {
-				node.expanded = !node.expanded
+			if node.IsDir {
+				node.Expanded = !node.Expanded
 				m.rebuildFlat()
 			}
 		}
@@ -76,8 +67,8 @@ func (m BinderModel) Update(msg tea.Msg) (BinderModel, tea.Cmd) {
 		// Expand selected folder or no-op.
 		if m.cursor >= 0 && m.cursor < len(m.flat) {
 			node := m.flat[m.cursor]
-			if node.isDir && !node.expanded {
-				node.expanded = true
+			if node.IsDir && !node.Expanded {
+				node.Expanded = true
 				m.rebuildFlat()
 			}
 		}
@@ -85,8 +76,8 @@ func (m BinderModel) Update(msg tea.Msg) (BinderModel, tea.Cmd) {
 		// Collapse selected folder.
 		if m.cursor >= 0 && m.cursor < len(m.flat) {
 			node := m.flat[m.cursor]
-			if node.isDir && node.expanded {
-				node.expanded = false
+			if node.IsDir && node.Expanded {
+				node.Expanded = false
 				m.rebuildFlat()
 			}
 		}
@@ -144,12 +135,12 @@ func (m BinderModel) View() string {
 }
 
 // renderNode renders a single tree node line.
-func (m BinderModel) renderNode(node *fileNode, selected bool) string {
-	indent := strings.Repeat("  ", node.depth)
+func (m BinderModel) renderNode(node *core.FileNode, selected bool) string {
+	indent := strings.Repeat("  ", node.Depth)
 
 	var prefix string
-	if node.isDir {
-		if node.expanded {
+	if node.IsDir {
+		if node.Expanded {
 			prefix = "▾ "
 		} else {
 			prefix = "▸ "
@@ -158,12 +149,12 @@ func (m BinderModel) renderNode(node *fileNode, selected bool) string {
 		prefix = "  "
 	}
 
-	display := indent + prefix + node.name
+	display := indent + prefix + node.Name
 
 	if selected && m.focus {
 		return TreeSelectedStyle.Render(display)
 	}
-	if node.isDir {
+	if node.IsDir {
 		return TreeFolderStyle.Render(display)
 	}
 	return TreeFileStyle.Render(display)
@@ -175,10 +166,10 @@ func (m BinderModel) SelectedFile() string {
 		return ""
 	}
 	node := m.flat[m.cursor]
-	if node.isDir {
+	if node.IsDir {
 		return ""
 	}
-	return node.path
+	return node.Path
 }
 
 // IsDirSelected returns true if the selected node is a directory.
@@ -186,7 +177,7 @@ func (m BinderModel) IsDirSelected() bool {
 	if m.cursor < 0 || m.cursor >= len(m.flat) {
 		return false
 	}
-	return m.flat[m.cursor].isDir
+	return m.flat[m.cursor].IsDir
 }
 
 // Focus sets focus state.
@@ -202,7 +193,7 @@ func (m *BinderModel) SetSize(w, h int) {
 
 // Refresh rescans the root directory and rebuilds the tree.
 func (m *BinderModel) Refresh() error {
-	nodes, err := buildFileTree(m.root, m.root, 0)
+	nodes, err := core.NewProject(m.root).BuildTree()
 	if err != nil {
 		return err
 	}
@@ -220,7 +211,7 @@ func (m *BinderModel) Refresh() error {
 // rebuildFlat rebuilds the flat list from the tree nodes.
 func (m *BinderModel) rebuildFlat() {
 	m.flat = nil
-	flattenNodes(m.nodes, &m.flat)
+	core.Flatten(m.nodes, &m.flat)
 }
 
 // scrollToCursor keeps the cursor visible.
@@ -238,85 +229,4 @@ func (m *BinderModel) scrollToCursor() {
 	if m.offset < 0 {
 		m.offset = 0
 	}
-}
-
-// flattenNodes recursively flattens visible nodes into the flat list.
-func flattenNodes(nodes []*fileNode, flat *[]*fileNode) {
-	for _, n := range nodes {
-		*flat = append(*flat, n)
-		if n.isDir && n.expanded && len(n.children) > 0 {
-			flattenNodes(n.children, flat)
-		}
-	}
-}
-
-// buildFileTree recursively scans a directory and builds fileNode tree.
-func buildFileTree(root, dir string, depth int) ([]*fileNode, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil, err
-	}
-
-	var nodes []*fileNode
-
-	// Separate directories and .md files, sort alphabetically.
-	var dirs, mdFiles []os.DirEntry
-	for _, e := range entries {
-		name := e.Name()
-		// Skip hidden files/directories.
-		if len(name) > 0 && name[0] == '.' {
-			continue
-		}
-		if e.IsDir() {
-			dirs = append(dirs, e)
-		} else if filepath.Ext(name) == ".md" {
-			mdFiles = append(mdFiles, e)
-		}
-	}
-
-	sort.Slice(dirs, func(i, j int) bool {
-		return strings.ToLower(dirs[i].Name()) < strings.ToLower(dirs[j].Name())
-	})
-	sort.Slice(mdFiles, func(i, j int) bool {
-		return strings.ToLower(mdFiles[i].Name()) < strings.ToLower(mdFiles[j].Name())
-	})
-
-	// Add directories.
-	for _, e := range dirs {
-		fullPath := filepath.Join(dir, e.Name())
-		name := e.Name()
-
-		children, err := buildFileTree(root, fullPath, depth+1)
-		if err != nil {
-			children = nil // skip unreadable directories
-		}
-
-		node := &fileNode{
-			name:     name,
-			path:     fullPath,
-			isDir:    true,
-			expanded: false,
-			children: children,
-			depth:    depth,
-		}
-		nodes = append(nodes, node)
-	}
-
-	// Add .md files.
-	for _, e := range mdFiles {
-		fullPath := filepath.Join(dir, e.Name())
-		name := e.Name()
-		// Strip .md extension for display.
-		displayName := name[:len(name)-3]
-
-		node := &fileNode{
-			name:  displayName,
-			path:  fullPath,
-			isDir: false,
-			depth: depth,
-		}
-		nodes = append(nodes, node)
-	}
-
-	return nodes, nil
 }
