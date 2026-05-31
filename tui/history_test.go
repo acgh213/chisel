@@ -11,6 +11,28 @@ import (
 	"github.com/acgh213/chisel/core"
 )
 
+// TestHistoryErrorClearsOnBack guards a regression: an error raised while in the
+// diff view (e.g. a failed Diff) must not bleed onto the list view. Going back to
+// the list with Esc clears it, since view() checks h.err before h.mode.
+func TestHistoryErrorClearsOnBack(t *testing.T) {
+	h := historyModel{
+		mode: historyDiff,
+		err:  "boom: diff failed",
+		revs: []core.Revision{{Hash: "deadbeefdeadbeef"}},
+	}
+
+	h, action := h.update(tea.KeyMsg{Type: tea.KeyEsc})
+	if action != historyNone {
+		t.Errorf("Esc in diff mode = %v, want historyNone", action)
+	}
+	if h.mode != historyList {
+		t.Errorf("after Esc, mode = %v, want historyList", h.mode)
+	}
+	if h.err != "" {
+		t.Errorf("after Esc, err = %q, want cleared", h.err)
+	}
+}
+
 // TestHistoryFlow drives the whole Phase 3 path through the root model with
 // simulated keys: open a scene, edit + Ctrl+S twice (two snapshots), Ctrl+H to
 // open the browser, then restore the older revision into the editor.

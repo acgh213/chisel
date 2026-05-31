@@ -444,21 +444,13 @@ func (m Model) updateHistory(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.statusMsg = fmt.Sprintf("Restore failed: %v", err)
 		} else {
 			m.editor.LoadRevision(m.editor.FilePath(), content)
-			m.statusMsg = fmt.Sprintf("Restored %s — review and Ctrl+S to keep", shortHash(hash))
+			m.statusMsg = fmt.Sprintf("Restored %s — review and Ctrl+S to keep", core.ShortHash(hash))
 		}
 		m.statusTimer = 4
 		return m, tea.Batch(statusTick(), m.editor.Init())
 	}
 
 	return m, nil
-}
-
-// shortHash abbreviates a revision hash for display.
-func shortHash(hash string) string {
-	if len(hash) > 7 {
-		return hash[:7]
-	}
-	return hash
 }
 
 // newScenePrompt handles the Ctrl+N new-scene flow.

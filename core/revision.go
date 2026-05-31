@@ -21,10 +21,7 @@ type Revision struct {
 
 // Short returns the abbreviated (7-char) revision hash.
 func (r Revision) Short() string {
-	if len(r.Hash) > 7 {
-		return r.Hash[:7]
-	}
-	return r.Hash
+	return ShortHash(r.Hash)
 }
 
 // RevisionBackend abstracts the version-control layer so git can be swapped for
@@ -178,19 +175,19 @@ func (gb *GitBackend) Diff(path, rev1, rev2 string) (string, error) {
 func (gb *GitBackend) Restore(path, rev string) (string, error) {
 	commit, err := gb.repo.CommitObject(plumbing.NewHash(rev))
 	if err != nil {
-		return "", fmt.Errorf("resolving %s: %w", short(rev), err)
+		return "", fmt.Errorf("resolving %s: %w", ShortHash(rev), err)
 	}
 	tree, err := commit.Tree()
 	if err != nil {
-		return "", fmt.Errorf("tree %s: %w", short(rev), err)
+		return "", fmt.Errorf("tree %s: %w", ShortHash(rev), err)
 	}
 	file, err := tree.File(gb.rel(path))
 	if err != nil {
-		return "", fmt.Errorf("finding file in %s: %w", short(rev), err)
+		return "", fmt.Errorf("finding file in %s: %w", ShortHash(rev), err)
 	}
 	content, err := file.Contents()
 	if err != nil {
-		return "", fmt.Errorf("reading file at %s: %w", short(rev), err)
+		return "", fmt.Errorf("reading file at %s: %w", ShortHash(rev), err)
 	}
 	return content, nil
 }
@@ -199,16 +196,17 @@ func (gb *GitBackend) Restore(path, rev string) (string, error) {
 func (gb *GitBackend) treeAt(rev string) (*object.Tree, error) {
 	commit, err := gb.repo.CommitObject(plumbing.NewHash(rev))
 	if err != nil {
-		return nil, fmt.Errorf("resolving %s: %w", short(rev), err)
+		return nil, fmt.Errorf("resolving %s: %w", ShortHash(rev), err)
 	}
 	tree, err := commit.Tree()
 	if err != nil {
-		return nil, fmt.Errorf("tree %s: %w", short(rev), err)
+		return nil, fmt.Errorf("tree %s: %w", ShortHash(rev), err)
 	}
 	return tree, nil
 }
 
-func short(hash string) string {
+// ShortHash abbreviates a revision hash to its 7-char prefix for display.
+func ShortHash(hash string) string {
 	if len(hash) > 7 {
 		return hash[:7]
 	}

@@ -91,6 +91,8 @@ func (h historyModel) update(msg tea.KeyMsg) (historyModel, historyAction) {
 		switch msg.String() {
 		case "esc", "h", "left", "backspace":
 			h.mode = historyList
+			h.err = "" // don't let a diff-view error bleed onto the list
+
 		case "j", "down":
 			h.diffOffset++
 		case "k", "up":
@@ -135,6 +137,7 @@ func (h *historyModel) showDiff() {
 	sel := h.revs[h.cursor]
 	h.diffOffset = 0
 	h.mode = historyDiff
+	h.err = "" // start clean; only a failure below sets it
 
 	if h.cursor+1 < len(h.revs) {
 		older := h.revs[h.cursor+1]
