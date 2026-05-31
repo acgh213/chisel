@@ -21,6 +21,16 @@ const (
 	PaneEditor
 )
 
+// viewMode selects the top-level layout. viewMain is the binder+editor split;
+// the structural views (corkboard, outliner) replace it full-width until closed.
+type viewMode int
+
+const (
+	viewMain viewMode = iota
+	viewCorkboard
+	viewOutliner
+)
+
 // minBinderWidth is the narrowest the binder pane may shrink to before the
 // editor starts giving up columns. Keeps the tree readable on small terminals.
 const minBinderWidth = 20
@@ -85,6 +95,12 @@ type Model struct {
 	revBackend  core.RevisionBackend
 	history     historyModel
 	showHistory bool
+
+	// Structural views (Phase 4). viewMode picks which is shown; corkboard and
+	// outliner are loaded on entry (F2/F3) and own all keys while active.
+	viewMode  viewMode
+	corkboard corkboardModel
+	outliner  outlinerModel
 }
 
 // NewModel creates a new chisel root model for the given project directory.
@@ -93,6 +109,9 @@ func NewModel(root string) (Model, error) {
 	if err := binder.Refresh(); err != nil {
 		return Model{}, fmt.Errorf("reading project directory: %w", err)
 	}
+	// The binder starts focused (focus defaults to PaneBinder), so its view
+	// state must agree — otherwise the tree ignores j/k until the first Tab.
+	binder.Focus(true)
 
 	return Model{
 		binder: binder,
@@ -120,6 +139,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// When the history browser is open it owns all keys.
 		if m.showHistory {
 			return m.updateHistory(msg)
+		}
+		// A structural view (corkboard/outliner) likewise owns all keys.
+		if m.viewMode != viewMain {
+			return m.updateView(msg)
 		}
 
 		// Capture the pending-quit state before clearing it: the
@@ -157,27 +180,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.focus == PaneBinder {
 				path := m.binder.SelectedFile()
 				if path != "" {
-					if m.editor.IsModified() {
-						if err := m.editor.Save(); err != nil {
-							m.statusMsg = fmt.Sprintf("Error saving: %v", err)
-							m.statusTimer = 3
-							cmds = append(cmds, statusTick())
-							return m, tea.Batch(cmds...)
-						}
-					}
-					if err := m.editor.LoadFile(path); err != nil {
-						m.statusMsg = fmt.Sprintf("Error opening: %v", err)
-						m.statusTimer = 3
-						cmds = append(cmds, statusTick())
-						return m, tea.Batch(cmds...)
-					}
-					m.focus = PaneEditor
-					m.binder.Focus(false)
-					m.editor.Focus(true)
-					m.statusMsg = fmt.Sprintf("Opened %s", filepath.Base(path))
-					m.statusTimer = 2
-					// Init() arms the cursor blink on focus gain.
-					cmds = append(cmds, statusTick(), m.editor.Init())
+					cmds = append(cmds, m.openScene(path))
 				} else {
 					// A folder (or nothing) is selected — let the binder
 					// toggle it open/closed.
@@ -231,6 +234,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "ctrl+n":
 			return m, m.newScenePrompt()
+
+		case "f2":
+			if err := m.enterCorkboard(); err != nil {
+				m.statusMsg = fmt.Sprintf("Error opening corkboard: %v", err)
+				m.statusTimer = 3
+				cmds = append(cmds, statusTick())
+			}
+
+		case "f3":
+			if err := m.enterOutliner(); err != nil {
+				m.statusMsg = fmt.Sprintf("Error opening outliner: %v", err)
+				m.statusTimer = 3
+				cmds = append(cmds, statusTick())
+			}
 
 		default:
 			// Safety net: any key without an explicit case above is forwarded
@@ -321,14 +338,24 @@ func (m Model) View() string {
 	}
 
 	var body string
-	if m.showHistory {
+	switch {
+	case m.showHistory:
 		body = m.history.view()
 		if m.history.mode == historyDiff {
 			statusParts = append(statusParts, "[History]  ↑/↓ Scroll  Esc=Back  r=Restore")
 		} else {
 			statusParts = append(statusParts, "[History]  ↑/↓ Navigate  Enter=Diff  r=Restore  Esc=Close")
 		}
-	} else {
+
+	case m.viewMode == viewCorkboard:
+		body = m.corkboard.view()
+		statusParts = append(statusParts, "[Corkboard]  ←→↑↓ Navigate  Enter=Open  F3=Outliner  Esc=Back")
+
+	case m.viewMode == viewOutliner:
+		body = m.outliner.view()
+		statusParts = append(statusParts, "[Outliner]  ↑/↓ Navigate  ←/→ Collapse/Expand  Enter=Open  F2=Corkboard  Esc=Back")
+
+	default:
 		body = lipgloss.JoinHorizontal(
 			lipgloss.Top,
 			m.binder.View(),
@@ -348,13 +375,18 @@ func (m Model) View() string {
 		}
 
 		if m.focus == PaneBinder {
-			statusParts = append(statusParts, "[Binder]  Tab=Switch  ^H=History")
+			statusParts = append(statusParts, "[Binder]  Tab=Switch  F2=Corkboard  F3=Outliner  ^H=History")
 		} else {
-			statusParts = append(statusParts, "[Editor]  Tab=Switch  ^S=Save  ^N=New  ^H=History")
+			statusParts = append(statusParts, "[Editor]  Tab=Switch  ^S=Save  ^N=New  F2=Corkboard  F3=Outliner")
 		}
 	}
 
-	status := StatusBarStyle.Width(m.width).Render(strings.Join(statusParts, "  │  "))
+	// The status bar is always exactly one row. Truncate the joined text to the
+	// inner width (box minus padding) so a long hint can't wrap to a second line
+	// and push the layout past the terminal height; MaxHeight(1) is a backstop.
+	statusText := truncate(strings.Join(statusParts, "  │  "),
+		m.width-StatusBarStyle.GetHorizontalFrameSize())
+	status := StatusBarStyle.Width(m.width).MaxHeight(1).Render(statusText)
 
 	return lipgloss.JoinVertical(lipgloss.Left, body, status)
 }
@@ -365,12 +397,15 @@ func (m *Model) layout() {
 	l := computeLayout(m.width, m.height)
 	m.binder.SetSize(l.binderW, l.paneH)
 	m.editor.SetSize(l.editorW, l.paneH)
-	// History overlays the full width above the status bar.
-	histH := m.height - 1
-	if histH < 1 {
-		histH = 1
+	// The history browser and the structural views all take the full width
+	// above the status bar.
+	fullH := m.height - 1
+	if fullH < 1 {
+		fullH = 1
 	}
-	m.history.SetSize(m.width, histH)
+	m.history.SetSize(m.width, fullH)
+	m.corkboard.SetSize(m.width, fullH)
+	m.outliner.SetSize(m.width, fullH)
 }
 
 // ensureBackend lazily opens (initializing on first use) the revision backend
@@ -450,6 +485,111 @@ func (m Model) updateHistory(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(statusTick(), m.editor.Init())
 	}
 
+	return m, nil
+}
+
+// openScene loads path into the editor and switches to the main view with the
+// editor focused, saving the current scene first if it has unsaved edits. It
+// returns the command to run (status ticks + cursor blink). Shared by the binder
+// and the structural views so "open a scene" behaves identically everywhere.
+func (m *Model) openScene(path string) tea.Cmd {
+	if m.editor.IsModified() {
+		if err := m.editor.Save(); err != nil {
+			m.statusMsg = fmt.Sprintf("Error saving: %v", err)
+			m.statusTimer = 3
+			return statusTick()
+		}
+	}
+	if err := m.editor.LoadFile(path); err != nil {
+		m.statusMsg = fmt.Sprintf("Error opening: %v", err)
+		m.statusTimer = 3
+		return statusTick()
+	}
+	m.viewMode = viewMain
+	m.focus = PaneEditor
+	m.binder.Focus(false)
+	m.editor.Focus(true)
+	m.statusMsg = fmt.Sprintf("Opened %s", filepath.Base(path))
+	m.statusTimer = 2
+	// Init() arms the cursor blink on focus gain.
+	return tea.Batch(statusTick(), m.editor.Init())
+}
+
+// enterCorkboard loads the corkboard for the binder's current folder and shows
+// it. Sizes are already current (layout runs on resize); SetSize here guards the
+// case where no resize has happened yet.
+func (m *Model) enterCorkboard() error {
+	dir := m.binder.CurrentDir()
+	name := folderDisplayName(dir, m.root)
+	if err := m.corkboard.open(dir, name); err != nil {
+		return err
+	}
+	fullH := m.height - 1
+	if fullH < 1 {
+		fullH = 1
+	}
+	m.corkboard.SetSize(m.width, fullH)
+	m.viewMode = viewCorkboard
+	return nil
+}
+
+// enterOutliner loads the project outline and shows it.
+func (m *Model) enterOutliner() error {
+	if err := m.outliner.open(m.root); err != nil {
+		return err
+	}
+	fullH := m.height - 1
+	if fullH < 1 {
+		fullH = 1
+	}
+	m.outliner.SetSize(m.width, fullH)
+	m.viewMode = viewOutliner
+	return nil
+}
+
+// updateView routes a key press to the active structural view. F1/Esc returns to
+// the main view; F2/F3 hop directly between the structural views; everything else
+// is forwarded to the active view, whose reported action (open/close) is applied.
+func (m Model) updateView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "f1", "esc":
+		m.viewMode = viewMain
+		return m, nil
+	case "f2":
+		if err := m.enterCorkboard(); err != nil {
+			m.statusMsg = fmt.Sprintf("Error opening corkboard: %v", err)
+			m.statusTimer = 3
+			return m, statusTick()
+		}
+		return m, nil
+	case "f3":
+		if err := m.enterOutliner(); err != nil {
+			m.statusMsg = fmt.Sprintf("Error opening outliner: %v", err)
+			m.statusTimer = 3
+			return m, statusTick()
+		}
+		return m, nil
+	}
+
+	var action viewAction
+	var path string
+	switch m.viewMode {
+	case viewCorkboard:
+		m.corkboard, action = m.corkboard.update(msg)
+		path = m.corkboard.selected()
+	case viewOutliner:
+		m.outliner, action = m.outliner.update(msg)
+		path = m.outliner.selected()
+	}
+
+	switch action {
+	case viewActionClose:
+		m.viewMode = viewMain
+	case viewActionOpen:
+		if path != "" {
+			return m, m.openScene(path)
+		}
+	}
 	return m, nil
 }
 

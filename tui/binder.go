@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"path/filepath"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -201,6 +202,20 @@ func (m BinderModel) IsDirSelected() bool {
 		return false
 	}
 	return m.flat[m.cursor].IsDir
+}
+
+// CurrentDir returns the folder the selection lives in: the selected node itself
+// when it's a directory, the parent directory when it's a file, or the project
+// root when nothing is selected. Used to scope the corkboard to a folder.
+func (m BinderModel) CurrentDir() string {
+	if m.cursor < 0 || m.cursor >= len(m.flat) {
+		return m.root
+	}
+	node := m.flat[m.cursor]
+	if node.IsDir {
+		return node.Path
+	}
+	return filepath.Dir(node.Path)
 }
 
 // Focus sets focus state.
