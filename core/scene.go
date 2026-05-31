@@ -1,38 +1,66 @@
 package core
 
-import "os"
+import (
+	"os"
+	"time"
+)
 
 // scenePerm is the file mode used when writing scene files.
 const scenePerm = 0o644
 
-// newSceneTemplate is the starting content for a freshly created scene.
-const newSceneTemplate = "# Untitled\n\n"
+// newSceneBody is the starting prose for a freshly created scene.
+const newSceneBody = "# Untitled\n\n"
 
-// Scene is one markdown file in a project. In this phase it is just a path plus
-// its raw contents; structured metadata (YAML frontmatter) arrives in a later
-// phase, at which point Content splits into frontmatter + body.
+// Scene is one markdown file in a project: optional YAML frontmatter (Meta) plus
+// the prose Body. The on-disk file is serializeScene(Meta, Body); a file with no
+// frontmatter loads with an empty Meta and the whole file as Body.
 type Scene struct {
-	Path    string
-	Content string
+	Path string
+	Meta Metadata
+	Body string
 }
 
-// LoadScene reads a scene file from disk.
+// LoadScene reads a scene file from disk, splitting frontmatter from prose.
 func LoadScene(path string) (*Scene, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	return &Scene{Path: path, Content: string(data)}, nil
+	meta, body := parseFrontmatter(string(data))
+	return &Scene{Path: path, Meta: meta, Body: body}, nil
 }
 
-// Save writes the scene's content back to its path.
+// Save writes the scene back to its path. If the scene carries metadata, the
+// derived fields (word_count, modified, and created on first save) are refreshed
+// before serializing; a scene with no metadata is written as plain body so it
+// stays plain. Refreshing derived metadata is independent of *why* Save was
+// called (explicit save, autosave, etc.) — the trigger is the caller's concern.
 func (s *Scene) Save() error {
-	return os.WriteFile(s.Path, []byte(s.Content), scenePerm)
+	if !s.Meta.IsEmpty() {
+		s.Meta.WordCount = WordCount(s.Body)
+		now := time.Now()
+		s.Meta.Modified = &now
+		if s.Meta.Created == nil {
+			created := now
+			s.Meta.Created = &created
+		}
+	}
+
+	out, err := serializeScene(s.Meta, s.Body)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(s.Path, []byte(out), scenePerm)
 }
 
-// CreateScene writes a new scene file with the default template and returns it.
+// CreateScene writes a new scene file (seeded with draft metadata so it joins
+// the metadata system immediately) and returns it.
 func CreateScene(path string) (*Scene, error) {
-	s := &Scene{Path: path, Content: newSceneTemplate}
+	s := &Scene{
+		Path: path,
+		Meta: Metadata{Status: StatusDraft},
+		Body: newSceneBody,
+	}
 	if err := s.Save(); err != nil {
 		return nil, err
 	}

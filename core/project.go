@@ -26,6 +26,10 @@ type FileNode struct {
 	Expanded bool
 	Children []*FileNode
 	Depth    int
+
+	// Status is the scene's frontmatter status, for files only. Empty for
+	// directories and for files without a status. Populated by BuildTree.
+	Status Status
 }
 
 // Project is a writing project rooted at a directory. The filesystem is the
@@ -108,10 +112,11 @@ func buildFileTree(dir string, depth int) ([]*FileNode, error) {
 		name := e.Name()
 		displayName := name[:len(name)-len(".md")] // strip .md for display
 		nodes = append(nodes, &FileNode{
-			Name:  displayName,
-			Path:  fullPath,
-			IsDir: false,
-			Depth: depth,
+			Name:   displayName,
+			Path:   fullPath,
+			IsDir:  false,
+			Depth:  depth,
+			Status: readMetadata(fullPath).Status, // best-effort; empty if none
 		})
 	}
 

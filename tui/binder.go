@@ -151,6 +151,14 @@ func (m BinderModel) renderNode(node *core.FileNode, selected bool) string {
 
 	display := indent + prefix + node.Name
 
+	// Append a status glyph for scenes that carry one (shape-coded progression:
+	// ○ draft → ◐ revised → ● done). Inherits the line's color.
+	if !node.IsDir {
+		if g := statusGlyph(node.Status); g != "" {
+			display += "  " + g
+		}
+	}
+
 	if selected && m.focus {
 		return TreeSelectedStyle.Render(display)
 	}
@@ -158,6 +166,21 @@ func (m BinderModel) renderNode(node *core.FileNode, selected bool) string {
 		return TreeFolderStyle.Render(display)
 	}
 	return TreeFileStyle.Render(display)
+}
+
+// statusGlyph maps a scene status to a single-character indicator, or "" for
+// no/unknown status.
+func statusGlyph(s core.Status) string {
+	switch s {
+	case core.StatusDraft:
+		return "○"
+	case core.StatusRevised:
+		return "◐"
+	case core.StatusDone:
+		return "●"
+	default:
+		return ""
+	}
 }
 
 // SelectedFile returns the path of the currently selected node if it's an .md file.
