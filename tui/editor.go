@@ -9,12 +9,13 @@ import (
 )
 
 // EditorModel wraps bubbles/textarea for markdown editing.
-// Handles file loading, saving, and modified state tracking.
+// The editor edits a scene's prose BODY only; the scene's frontmatter metadata
+// is held on m.scene and preserved across edits/saves, never shown as prose.
 type EditorModel struct {
 	textarea textarea.Model
-	filePath string   // current file being edited, empty if none
-	modified bool     // true if there are unsaved changes
-	original string   // content at last save/load
+	scene    *core.Scene // current scene (Meta + Body), nil if none open
+	modified bool        // true if the body differs from the last load/save
+	original string      // body at last save/load (for modified tracking)
 	focus    bool
 	width    int
 	height   int
@@ -85,7 +86,7 @@ func (m EditorModel) View() string {
 	}
 
 	var content string
-	if m.filePath != "" {
+	if m.scene != nil {
 		content = m.textarea.View()
 	} else {
 		content = lipgloss.NewStyle().
@@ -97,36 +98,38 @@ func (m EditorModel) View() string {
 	return style.Render(content)
 }
 
-// LoadFile reads a markdown file into the editor.
+// LoadFile reads a markdown file into the editor. The textarea shows only the
+// prose body; the scene's frontmatter is kept on m.scene for save-time.
 func (m *EditorModel) LoadFile(path string) error {
 	sc, err := core.LoadScene(path)
 	if err != nil {
 		return err
 	}
 
-	m.filePath = sc.Path
-	m.original = sc.Content
+	m.scene = sc
+	m.original = sc.Body
 	m.modified = false
 	m.textarea.Reset()
-	m.textarea.SetValue(sc.Content)
+	m.textarea.SetValue(sc.Body)
 	// Move cursor to start.
 	m.textarea.CursorStart()
 
 	return nil
 }
 
-// Save writes the editor content to the current file.
+// Save writes the editor's body back to the current scene, preserving (and, for
+// scenes with metadata, refreshing) the frontmatter.
 func (m *EditorModel) Save() error {
-	if m.filePath == "" {
+	if m.scene == nil {
 		return nil // nothing to save
 	}
 
-	sc := &core.Scene{Path: m.filePath, Content: m.textarea.Value()}
-	if err := sc.Save(); err != nil {
+	m.scene.Body = m.textarea.Value()
+	if err := m.scene.Save(); err != nil {
 		return err
 	}
 
-	m.original = sc.Content
+	m.original = m.scene.Body
 	m.modified = false
 	return nil
 }
@@ -136,9 +139,12 @@ func (m EditorModel) IsModified() bool {
 	return m.modified
 }
 
-// FilePath returns the current file path, or empty string.
+// FilePath returns the current scene's file path, or empty string if none open.
 func (m EditorModel) FilePath() string {
-	return m.filePath
+	if m.scene == nil {
+		return ""
+	}
+	return m.scene.Path
 }
 
 // Content returns the current editor content.
