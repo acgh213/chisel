@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -101,6 +102,10 @@ type Model struct {
 	viewMode  viewMode
 	corkboard corkboardModel
 	outliner  outlinerModel
+
+	// pandocPath is the resolved path to the pandoc binary, or "" if not
+	// found. Detected once in NewModel; gates the .docx export offer.
+	pandocPath string
 }
 
 // NewModel creates a new chisel root model for the given project directory.
@@ -113,11 +118,14 @@ func NewModel(root string) (Model, error) {
 	// state must agree — otherwise the tree ignores j/k until the first Tab.
 	binder.Focus(true)
 
+	pandocPath, _ := exec.LookPath("pandoc")
+
 	return Model{
-		binder: binder,
-		editor: NewEditor(),
-		focus:  PaneBinder,
-		root:   root,
+		binder:     binder,
+		editor:     NewEditor(),
+		focus:      PaneBinder,
+		root:       root,
+		pandocPath: pandocPath,
 	}, nil
 }
 
@@ -249,6 +257,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, statusTick())
 			}
 
+		case "ctrl+e":
+			p := core.NewProject(m.root)
+			result, err := p.Export(m.pandocPath)
+			if err != nil {
+				m.statusMsg = fmt.Sprintf("Export failed: %v", err)
+			} else if result.DocxPath != "" {
+				m.statusMsg = fmt.Sprintf("Exported: %s + %s",
+					filepath.Base(result.MarkdownPath),
+					filepath.Base(result.DocxPath))
+			} else {
+				m.statusMsg = fmt.Sprintf("Exported: %s", filepath.Base(result.MarkdownPath))
+			}
+			m.statusTimer = 3
+			cmds = append(cmds, statusTick())
+
 		default:
 			// Safety net: any key without an explicit case above is forwarded
 			// to the focused pane. Keys that DO have their own case (e.g.
@@ -375,9 +398,9 @@ func (m Model) View() string {
 		}
 
 		if m.focus == PaneBinder {
-			statusParts = append(statusParts, "[Binder]  Tab=Switch  F2=Corkboard  F3=Outliner  ^H=History")
+			statusParts = append(statusParts, "[Binder]  Tab=Switch  F2=Corkboard  F3=Outliner  ^H=History  ^E=Export")
 		} else {
-			statusParts = append(statusParts, "[Editor]  Tab=Switch  ^S=Save  ^N=New  F2=Corkboard  F3=Outliner")
+			statusParts = append(statusParts, "[Editor]  Tab=Switch  ^S=Save  ^N=New  F2=Corkboard  F3=Outliner  ^E=Export")
 		}
 	}
 
