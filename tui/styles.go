@@ -44,6 +44,22 @@ func FocusedStyle(base lipgloss.Style) lipgloss.Style {
 	return base.BorderForeground(ColorAccent)
 }
 
+// History browser styles.
+var (
+	HistoryStyle = lipgloss.NewStyle().
+			BorderStyle(lipgloss.NormalBorder()).
+			BorderForeground(ColorAccent).
+			Padding(0, 1)
+
+	HistoryHeaderStyle = lipgloss.NewStyle().
+				Foreground(ColorMuted).
+				Bold(true)
+
+	DiffAddStyle  = lipgloss.NewStyle().Foreground(ColorGreen)
+	DiffDelStyle  = lipgloss.NewStyle().Foreground(ColorRed)
+	DiffMetaStyle = lipgloss.NewStyle().Foreground(ColorDim)
+)
+
 // Tree node styles.
 var (
 	TreeSelectedStyle = lipgloss.NewStyle().

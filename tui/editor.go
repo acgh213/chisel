@@ -117,6 +117,19 @@ func (m *EditorModel) LoadFile(path string) error {
 	return nil
 }
 
+// LoadRevision replaces the editor's working content with a restored snapshot
+// (raw file content) without writing to disk. The scene (meta + body) is parsed
+// from the snapshot; the body lands in the textarea and is marked modified, so
+// the user reviews it and presses Ctrl+S to keep it. m.original is left as the
+// on-disk body so the modified flag reflects the divergence from disk.
+func (m *EditorModel) LoadRevision(path, raw string) {
+	m.scene = core.ParseScene(path, raw)
+	m.textarea.Reset()
+	m.textarea.SetValue(m.scene.Body)
+	m.textarea.CursorStart()
+	m.modified = m.textarea.Value() != m.original
+}
+
 // Save writes the editor's body back to the current scene, preserving (and, for
 // scenes with metadata, refreshing) the frontmatter.
 func (m *EditorModel) Save() error {

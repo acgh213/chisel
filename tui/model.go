@@ -9,6 +9,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/acgh213/chisel/core"
 )
 
 // Pane indicates which pane has focus.
@@ -77,6 +79,12 @@ type Model struct {
 	pendingQuit bool   // true after first quit attempt with unsaved changes
 	statusMsg   string // temporary status message (e.g., "Saved.")
 	statusTimer int    // ticks remaining for status message
+
+	// Revision history (Phase 3). The backend is opened lazily on first save or
+	// history view; history overlays the panes when showHistory is true.
+	revBackend  core.RevisionBackend
+	history     historyModel
+	showHistory bool
 }
 
 // NewModel creates a new chisel root model for the given project directory.
@@ -109,6 +117,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// When the history browser is open it owns all keys.
+		if m.showHistory {
+			return m.updateHistory(msg)
+		}
+
 		// Capture the pending-quit state before clearing it: the
 		// "press Ctrl+Q again" guard reads the value from the *previous*
 		// key press, while any key cancels a pending quit for the next one.
@@ -185,13 +198,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if err := m.editor.Save(); err != nil {
 					m.statusMsg = fmt.Sprintf("Error saving: %v", err)
 				} else {
-					m.statusMsg = fmt.Sprintf("Saved %s (%d words)",
-						filepath.Base(m.editor.FilePath()), m.editor.WordCount())
+					path := m.editor.FilePath()
+					words := m.editor.WordCount()
+					m.statusMsg = fmt.Sprintf("Saved %s (%d words)", filepath.Base(path), words)
+					// Snapshot the save. A snapshot failure is non-fatal — the
+					// file is already saved; we just note it in the status bar.
+					commitMsg := fmt.Sprintf("scene: %s — %d words", filepath.Base(path), words)
+					if serr := m.snapshot(path, commitMsg); serr != nil {
+						m.statusMsg = fmt.Sprintf("Saved %s (snapshot failed: %v)", filepath.Base(path), serr)
+					}
 				}
 				m.statusTimer = 3
 				cmds = append(cmds, statusTick())
 			} else {
 				m.statusMsg = "No file open to save."
+				m.statusTimer = 2
+				cmds = append(cmds, statusTick())
+			}
+
+		case "ctrl+h":
+			if m.editor.FilePath() != "" {
+				if err := m.openHistory(); err != nil {
+					m.statusMsg = fmt.Sprintf("Error opening history: %v", err)
+					m.statusTimer = 3
+					cmds = append(cmds, statusTick())
+				}
+			} else {
+				m.statusMsg = "Open a scene first to view its history."
 				m.statusTimer = 2
 				cmds = append(cmds, statusTick())
 			}
@@ -282,37 +315,48 @@ func (m Model) View() string {
 	}
 
 	// Pane sizes are set in layout() on WindowSizeMsg; View only reads state.
-	panes := lipgloss.JoinHorizontal(
-		lipgloss.Top,
-		m.binder.View(),
-		m.editor.View(),
-	)
-
-	// Status bar.
 	var statusParts []string
 	if m.statusMsg != "" {
 		statusParts = append(statusParts, m.statusMsg)
-	} else if m.editor.FilePath() != "" {
-		mod := ""
-		if m.editor.IsModified() {
-			mod = " ●"
-		}
-		statusParts = append(statusParts, fmt.Sprintf("%s — %d words%s",
-			filepath.Base(m.editor.FilePath()),
-			m.editor.WordCount(),
-			mod,
-		))
 	}
 
-	if m.focus == PaneBinder {
-		statusParts = append(statusParts, "[Binder]  Tab=Switch")
+	var body string
+	if m.showHistory {
+		body = m.history.view()
+		if m.history.mode == historyDiff {
+			statusParts = append(statusParts, "[History]  ↑/↓ Scroll  Esc=Back  r=Restore")
+		} else {
+			statusParts = append(statusParts, "[History]  ↑/↓ Navigate  Enter=Diff  r=Restore  Esc=Close")
+		}
 	} else {
-		statusParts = append(statusParts, "[Editor]  Tab=Switch  ^S=Save  ^N=New")
+		body = lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			m.binder.View(),
+			m.editor.View(),
+		)
+
+		if m.statusMsg == "" && m.editor.FilePath() != "" {
+			mod := ""
+			if m.editor.IsModified() {
+				mod = " ●"
+			}
+			statusParts = append(statusParts, fmt.Sprintf("%s — %d words%s",
+				filepath.Base(m.editor.FilePath()),
+				m.editor.WordCount(),
+				mod,
+			))
+		}
+
+		if m.focus == PaneBinder {
+			statusParts = append(statusParts, "[Binder]  Tab=Switch  ^H=History")
+		} else {
+			statusParts = append(statusParts, "[Editor]  Tab=Switch  ^S=Save  ^N=New  ^H=History")
+		}
 	}
 
 	status := StatusBarStyle.Width(m.width).Render(strings.Join(statusParts, "  │  "))
 
-	return lipgloss.JoinVertical(lipgloss.Left, panes, status)
+	return lipgloss.JoinVertical(lipgloss.Left, body, status)
 }
 
 // layout recalculates pane sizes after a window resize. It is the single place
@@ -321,6 +365,92 @@ func (m *Model) layout() {
 	l := computeLayout(m.width, m.height)
 	m.binder.SetSize(l.binderW, l.paneH)
 	m.editor.SetSize(l.editorW, l.paneH)
+	// History overlays the full width above the status bar.
+	histH := m.height - 1
+	if histH < 1 {
+		histH = 1
+	}
+	m.history.SetSize(m.width, histH)
+}
+
+// ensureBackend lazily opens (initializing on first use) the revision backend
+// for the project. Git init happens here, not at startup.
+func (m *Model) ensureBackend() (core.RevisionBackend, error) {
+	if m.revBackend == nil {
+		b, err := core.OpenGitBackend(m.root)
+		if err != nil {
+			return nil, err
+		}
+		m.revBackend = b
+	}
+	return m.revBackend, nil
+}
+
+// snapshot records a revision of path. Trigger lives here (the caller decides
+// when); the backend just snapshots.
+func (m *Model) snapshot(path, message string) error {
+	backend, err := m.ensureBackend()
+	if err != nil {
+		return err
+	}
+	return backend.Snapshot(path, message)
+}
+
+// openHistory loads the current scene's revision history into the browser.
+func (m *Model) openHistory() error {
+	backend, err := m.ensureBackend()
+	if err != nil {
+		return err
+	}
+	path := m.editor.FilePath()
+	name := strings.TrimSuffix(filepath.Base(path), ".md")
+	if err := m.history.open(backend, path, name); err != nil {
+		return err
+	}
+	histH := m.height - 1
+	if histH < 1 {
+		histH = 1
+	}
+	m.history.SetSize(m.width, histH)
+	m.showHistory = true
+	return nil
+}
+
+// updateHistory routes a key press to the history browser and applies whatever
+// action it reports (close, or restore the selected revision into the editor).
+func (m Model) updateHistory(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	var action historyAction
+	m.history, action = m.history.update(msg)
+
+	switch action {
+	case historyClose:
+		m.showHistory = false
+		m.focus = PaneEditor
+		m.binder.Focus(false)
+		m.editor.Focus(true)
+		return m, m.editor.Init()
+
+	case historyRestore:
+		hash := m.history.selectedHash()
+		m.showHistory = false
+		m.focus = PaneEditor
+		m.binder.Focus(false)
+		m.editor.Focus(true)
+		if hash == "" {
+			return m, m.editor.Init()
+		}
+		content, err := m.revBackend.Restore(m.editor.FilePath(), hash)
+		if err != nil {
+			m.statusMsg = fmt.Sprintf("Restore failed: %v", err)
+		} else {
+			m.editor.LoadRevision(m.editor.FilePath(), content)
+			m.statusMsg = fmt.Sprintf("Restored %s — review and Ctrl+S to keep", core.ShortHash(hash))
+		}
+		m.statusTimer = 4
+		return m, tea.Batch(statusTick(), m.editor.Init())
+	}
+
+	return m, nil
 }
 
 // newScenePrompt handles the Ctrl+N new-scene flow.
