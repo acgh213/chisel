@@ -46,7 +46,9 @@ func NewEditor() EditorModel {
 	}
 }
 
-// Init initializes the editor model.
+// Init returns the editor's startup command: the textarea cursor-blink ticker
+// (textarea.Blink). It does not re-initialize any editor state, so callers can
+// safely use it to (re)arm the blink whenever the editor gains focus.
 func (m EditorModel) Init() tea.Cmd {
 	return textarea.Blink
 }

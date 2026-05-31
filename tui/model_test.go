@@ -11,9 +11,12 @@ import (
 )
 
 // TestComputeLayoutSumsToWidth is the "panes tile the terminal exactly"
-// guarantee, asserted rather than eyeballed: at any reasonable size the binder
-// and editor outer widths add up to the terminal width, the panes leave one row
-// for the status bar, and the binder never drops below minBinderWidth.
+// guarantee, asserted rather than eyeballed. For widths at or above
+// minBinderWidth+1 (21), the binder keeps its minimum and the editor takes the
+// rest, so the outer widths sum to the terminal width, the panes leave one row
+// for the status bar, and the binder never drops below minBinderWidth. (Below
+// that threshold the binder yields columns to the editor — covered by
+// TestComputeLayoutSumInvariant.)
 func TestComputeLayoutSumsToWidth(t *testing.T) {
 	cases := []struct{ w, h int }{
 		{80, 24},
@@ -21,7 +24,9 @@ func TestComputeLayoutSumsToWidth(t *testing.T) {
 		{200, 50},
 		{61, 30},
 		{60, 20},
-		{21, 10},
+		{45, 20},
+		{30, 20},
+		{21, 10}, // exactly minBinderWidth+1, the threshold
 	}
 	for _, c := range cases {
 		l := computeLayout(c.w, c.h)
@@ -35,6 +40,25 @@ func TestComputeLayoutSumsToWidth(t *testing.T) {
 		if l.binderW < minBinderWidth {
 			t.Errorf("computeLayout(%d,%d): binderW=%d below minBinderWidth=%d",
 				c.w, c.h, l.binderW, minBinderWidth)
+		}
+	}
+}
+
+// TestComputeLayoutSumInvariant proves the panes tile the full width for every
+// width >= 2 — including widths below minBinderWidth, where the editorW<1
+// fallback shrinks the binder. (Two 1-wide panes need at least 2 columns;
+// widths 0 and 1 are degenerate and only require positive dimensions, which
+// TestComputeLayoutClampsTinyTerminal covers.)
+func TestComputeLayoutSumInvariant(t *testing.T) {
+	for w := 2; w <= 300; w++ {
+		l := computeLayout(w, 24)
+		if l.binderW+l.editorW != w {
+			t.Errorf("computeLayout(%d,24): binderW(%d)+editorW(%d)=%d, want %d",
+				w, l.binderW, l.editorW, l.binderW+l.editorW, w)
+		}
+		if l.binderW < 1 || l.editorW < 1 {
+			t.Errorf("computeLayout(%d,24): non-positive pane: binderW=%d editorW=%d",
+				w, l.binderW, l.editorW)
 		}
 	}
 }
