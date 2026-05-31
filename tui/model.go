@@ -19,6 +19,52 @@ const (
 	PaneEditor
 )
 
+// minBinderWidth is the narrowest the binder pane may shrink to before the
+// editor starts giving up columns. Keeps the tree readable on small terminals.
+const minBinderWidth = 20
+
+// layoutSizes holds the OUTER box dimensions (including each pane's border)
+// for the binder and editor, plus the shared pane height.
+type layoutSizes struct {
+	binderW int
+	editorW int
+	paneH   int
+}
+
+// computeLayout splits a terminal of the given size into binder/editor pane
+// dimensions. It is pure (no model state) so it can be unit-tested without a
+// running terminal. Widths are OUTER box sizes and sum to width when the
+// terminal is wide enough; one row is reserved for the status bar. Every value
+// is floored at 1 so a tiny terminal can never produce a zero/negative box
+// (which is what makes lipgloss/textarea misbehave).
+func computeLayout(width, height int) layoutSizes {
+	paneH := height - 1
+	if paneH < 1 {
+		paneH = 1
+	}
+
+	binderW := width / 3
+	if binderW < minBinderWidth {
+		binderW = minBinderWidth
+	}
+	editorW := width - binderW
+
+	// When the terminal is too narrow for the preferred split, the editor
+	// takes priority and the binder shrinks to whatever is left.
+	if editorW < 1 {
+		binderW = width - 1
+		editorW = 1
+	}
+	if binderW < 1 {
+		binderW = 1
+	}
+	if editorW < 1 {
+		editorW = 1
+	}
+
+	return layoutSizes{binderW: binderW, editorW: editorW, paneH: paneH}
+}
+
 // Model is the root bubbletea model for chisel.
 type Model struct {
 	binder      BinderModel
@@ -48,12 +94,12 @@ func NewModel(root string) (Model, error) {
 	}, nil
 }
 
-// Init initializes the root model.
+// Init initializes the root model. Alt-screen is enabled via tea.WithAltScreen
+// in main, so it is not requested again here.
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(
 		m.binder.Init(),
 		m.editor.Init(),
-		tea.EnterAltScreen,
 	)
 }
 
@@ -63,12 +109,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		// Clear pending quit if user presses anything else.
+		// Capture the pending-quit state before clearing it: the
+		// "press Ctrl+Q again" guard reads the value from the *previous*
+		// key press, while any key cancels a pending quit for the next one.
+		wasPending := m.pendingQuit
 		m.pendingQuit = false
 
 		switch msg.String() {
 		case "ctrl+q", "esc":
-			if m.editor.IsModified() && !m.pendingQuit {
+			if m.editor.IsModified() && !wasPending {
 				m.pendingQuit = true
 				m.statusMsg = "Unsaved changes! Press Ctrl+Q again to quit without saving."
 				m.statusTimer = 3
@@ -83,6 +132,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.focus = PaneEditor
 				m.binder.Focus(false)
 				m.editor.Focus(true)
+				cmds = append(cmds, m.editor.Init()) // arm cursor blink
 			} else {
 				m.focus = PaneBinder
 				m.editor.Focus(false)
@@ -112,8 +162,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.editor.Focus(true)
 					m.statusMsg = fmt.Sprintf("Opened %s", filepath.Base(path))
 					m.statusTimer = 2
-					cmds = append(cmds, statusTick())
+					cmds = append(cmds, statusTick(), m.editor.Init())
+				} else {
+					// A folder (or nothing) is selected — let the binder
+					// toggle it open/closed.
+					var cmd tea.Cmd
+					m.binder, cmd = m.binder.Update(msg)
+					cmds = append(cmds, cmd)
 				}
+			} else {
+				// Editor focused — Enter must insert a newline, not be
+				// swallowed here.
+				var cmd tea.Cmd
+				m.editor, cmd = m.editor.Update(msg)
+				cmds = append(cmds, cmd)
 			}
 
 		case "ctrl+s":
@@ -148,10 +210,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+		return m, tea.Batch(cmds...)
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
 		m.layout()
+		return m, nil
 
 	case newSceneMsg:
 		if msg.err != nil {
@@ -173,9 +238,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.editor.Focus(true)
 				m.statusMsg = "New scene created."
 				m.statusTimer = 2
-				cmds = append(cmds, statusTick())
+				cmds = append(cmds, statusTick(), m.editor.Init())
 			}
 		}
+		return m, tea.Batch(cmds...)
 
 	case statusTickMsg:
 		if m.statusTimer > 0 {
@@ -187,12 +253,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.pendingQuit = false // clear pending quit when message expires
 			}
 		}
+		return m, tea.Batch(cmds...)
 	}
 
-	// Always blink the textarea cursor.
-	cmds = append(cmds, m.editor.Init())
-
-	return m, tea.Batch(cmds...)
+	// Forward any other message (notably the textarea cursor-blink tick) to
+	// the editor so the blink keeps animating. Blink is armed once on focus
+	// gain and self-perpetuates through this path — no per-update re-arming.
+	var cmd tea.Cmd
+	m.editor, cmd = m.editor.Update(msg)
+	return m, cmd
 }
 
 // View renders the entire application.
@@ -205,13 +274,7 @@ func (m Model) View() string {
 		return "Starting..."
 	}
 
-	binderWidth := m.width / 3
-	editorWidth := m.width - binderWidth
-	paneHeight := m.height - 1
-
-	m.binder.SetSize(binderWidth, paneHeight)
-	m.editor.SetSize(editorWidth, paneHeight)
-
+	// Pane sizes are set in layout() on WindowSizeMsg; View only reads state.
 	panes := lipgloss.JoinHorizontal(
 		lipgloss.Top,
 		m.binder.View(),
@@ -245,14 +308,12 @@ func (m Model) View() string {
 	return lipgloss.JoinVertical(lipgloss.Left, panes, status)
 }
 
-// layout recalculates pane sizes after a window resize.
+// layout recalculates pane sizes after a window resize. It is the single place
+// that pushes sizes into the panes.
 func (m *Model) layout() {
-	binderWidth := m.width / 3
-	editorWidth := m.width - binderWidth
-	paneHeight := m.height - 1
-
-	m.binder.SetSize(binderWidth, paneHeight)
-	m.editor.SetSize(editorWidth, paneHeight)
+	l := computeLayout(m.width, m.height)
+	m.binder.SetSize(l.binderW, l.paneH)
+	m.editor.SetSize(l.editorW, l.paneH)
 }
 
 // newScenePrompt handles the Ctrl+N new-scene flow.

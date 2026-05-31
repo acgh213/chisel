@@ -1,0 +1,126 @@
+package tui
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+)
+
+// TestComputeLayoutSumsToWidth is the "panes tile the terminal exactly"
+// guarantee, asserted rather than eyeballed: at any reasonable size the binder
+// and editor outer widths add up to the terminal width, the panes leave one row
+// for the status bar, and the binder never drops below minBinderWidth.
+func TestComputeLayoutSumsToWidth(t *testing.T) {
+	cases := []struct{ w, h int }{
+		{80, 24},
+		{120, 40},
+		{200, 50},
+		{61, 30},
+		{60, 20},
+		{21, 10},
+	}
+	for _, c := range cases {
+		l := computeLayout(c.w, c.h)
+		if l.binderW+l.editorW != c.w {
+			t.Errorf("computeLayout(%d,%d): binderW(%d)+editorW(%d)=%d, want %d",
+				c.w, c.h, l.binderW, l.editorW, l.binderW+l.editorW, c.w)
+		}
+		if l.paneH != c.h-1 {
+			t.Errorf("computeLayout(%d,%d): paneH=%d, want %d", c.w, c.h, l.paneH, c.h-1)
+		}
+		if l.binderW < minBinderWidth {
+			t.Errorf("computeLayout(%d,%d): binderW=%d below minBinderWidth=%d",
+				c.w, c.h, l.binderW, minBinderWidth)
+		}
+	}
+}
+
+// TestComputeLayoutClampsTinyTerminal makes sure absurdly small (or zero)
+// terminal sizes never yield a zero/negative dimension, which is what makes
+// lipgloss and the textarea misbehave or panic.
+func TestComputeLayoutClampsTinyTerminal(t *testing.T) {
+	cases := []struct{ w, h int }{
+		{20, 5},
+		{10, 3},
+		{2, 2},
+		{1, 1},
+		{0, 0},
+	}
+	for _, c := range cases {
+		l := computeLayout(c.w, c.h)
+		if l.binderW < 1 || l.editorW < 1 || l.paneH < 1 {
+			t.Errorf("computeLayout(%d,%d) produced non-positive dimension: %+v", c.w, c.h, l)
+		}
+	}
+}
+
+// TestEnterInsertsNewlineInEditor guards the bug where the root model's "enter"
+// case swallowed the key while the editor was focused, so you couldn't make a
+// new line while writing.
+func TestEnterInsertsNewlineInEditor(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "scene.md")
+	if err := os.WriteFile(path, []byte("line one"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	m, err := NewModel(dir)
+	if err != nil {
+		t.Fatalf("NewModel: %v", err)
+	}
+	// Open the scene and focus the editor (cursor lands at start of text).
+	if err := m.editor.LoadFile(path); err != nil {
+		t.Fatalf("LoadFile: %v", err)
+	}
+	m.editor.Focus(true)
+	m.focus = PaneEditor
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	got := updated.(Model).editor.Content()
+	if !strings.Contains(got, "\n") {
+		t.Errorf("Enter in editor did not insert a newline; content = %q", got)
+	}
+}
+
+// TestViewFitsTerminal renders the real composed View at several terminal
+// sizes and asserts the output never overflows: no line wider than the
+// terminal, no more lines than its height. This is the regression guard for
+// the bordered-pane overflow bug.
+func TestViewFitsTerminal(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "scene.md"),
+		[]byte("# A Scene\n\nSome prose with several words on a line.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	base, err := NewModel(dir)
+	if err != nil {
+		t.Fatalf("NewModel: %v", err)
+	}
+
+	sizes := []struct{ w, h int }{
+		{80, 24},
+		{120, 40},
+		{200, 50},
+		{60, 20},
+		{40, 15},
+	}
+	for _, s := range sizes {
+		updated, _ := base.Update(tea.WindowSizeMsg{Width: s.w, Height: s.h})
+		view := updated.View()
+		lines := strings.Split(view, "\n")
+
+		if len(lines) > s.h {
+			t.Errorf("%dx%d: view rendered %d lines, exceeds height %d", s.w, s.h, len(lines), s.h)
+		}
+		for i, ln := range lines {
+			if w := lipgloss.Width(ln); w > s.w {
+				t.Errorf("%dx%d: line %d width %d exceeds terminal width %d", s.w, s.h, i, w, s.w)
+			}
+		}
+	}
+}

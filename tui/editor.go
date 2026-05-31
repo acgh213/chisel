@@ -72,7 +72,12 @@ func (m EditorModel) Update(msg tea.Msg) (EditorModel, tea.Cmd) {
 
 // View renders the editor.
 func (m EditorModel) View() string {
-	style := EditorStyle.Width(m.width).Height(m.height)
+	// .Width()/.Height() in lipgloss include padding but NOT the border, which
+	// is drawn outside. Subtract only the border so the rendered box is exactly
+	// m.width × m.height and tiles flush against the binder.
+	style := EditorStyle.
+		Width(m.width - EditorStyle.GetHorizontalBorderSize()).
+		Height(m.height - EditorStyle.GetVerticalBorderSize())
 	if m.focus {
 		style = FocusedStyle(style)
 	}
@@ -167,12 +172,21 @@ func (m *EditorModel) Focus(v bool) {
 	}
 }
 
-// SetSize sets the editor dimensions.
+// SetSize sets the editor dimensions. w and h are the OUTER box size; the
+// textarea is sized to the inner content area (box minus border + padding).
 func (m *EditorModel) SetSize(w, h int) {
 	m.width = w
 	m.height = h
-	m.textarea.SetWidth(w - 4) // account for padding/borders
-	m.textarea.SetHeight(h - 3)
+	taW := w - EditorStyle.GetHorizontalFrameSize()
+	taH := h - EditorStyle.GetVerticalFrameSize()
+	if taW < 1 {
+		taW = 1
+	}
+	if taH < 1 {
+		taH = 1
+	}
+	m.textarea.SetWidth(taW)
+	m.textarea.SetHeight(taH)
 }
 
 // NewScene creates a new .md file and loads it.
