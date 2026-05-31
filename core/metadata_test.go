@@ -1,6 +1,8 @@
 package core
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -132,6 +134,33 @@ func TestRoundTrip(t *testing.T) {
 	}
 	if out2 != out {
 		t.Errorf("serialization not stable across round-trip:\n first:\n%s\n second:\n%s", out, out2)
+	}
+}
+
+// TestReadMetadataMatchesParse confirms the lazy frontmatter-only reader used
+// by BuildTree returns the same metadata that the full parser would, across the
+// frontmatter / no-frontmatter / malformed / unterminated cases. (readMetadata
+// stops at the closing delimiter instead of reading whole files.)
+func TestReadMetadataMatchesParse(t *testing.T) {
+	cases := map[string]string{
+		"with-frontmatter.md": "---\ntitle: T\nstatus: done\ntags:\n  - a\n  - b\n---\n# Body\n\nlots of prose\n",
+		"no-frontmatter.md":   "# Just Prose\n\nno header\n",
+		"malformed.md":        "---\nstatus: [bad\n : :\n---\nbody\n",
+		"unterminated.md":     "---\ntitle: Oops\nno close\n",
+		"crlf.md":             "---\r\nstatus: revised\r\n---\r\n# Body\r\n",
+	}
+	tmp := t.TempDir()
+	for name, content := range cases {
+		path := filepath.Join(tmp, name)
+		if err := os.WriteFile(path, []byte(content), scenePerm); err != nil {
+			t.Fatal(err)
+		}
+		want, _ := parseFrontmatter(content)
+		got := readMetadata(path)
+		if got.Status != want.Status || got.Title != want.Title ||
+			len(got.Tags) != len(want.Tags) {
+			t.Errorf("%s: readMetadata = %+v, want (from parseFrontmatter) %+v", name, got, want)
+		}
 	}
 }
 

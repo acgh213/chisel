@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bufio"
 	"bytes"
 	"os"
 	"strings"
@@ -8,6 +9,10 @@ import (
 
 	"gopkg.in/yaml.v3"
 )
+
+// maxFrontmatterLine bounds a single frontmatter line when scanning lazily, so a
+// pathological file can't blow up memory. Frontmatter lines are short in practice.
+const maxFrontmatterLine = 1 << 20 // 1 MiB
 
 // frontmatterDelim is the line that opens and closes a YAML frontmatter block.
 const frontmatterDelim = "---"
@@ -115,13 +120,42 @@ func serializeScene(meta Metadata, body string) (string, error) {
 }
 
 // readMetadata reads only the metadata for a scene file, best-effort. Errors
-// (missing file, bad YAML) yield zero metadata. Used to annotate the binder
-// without loading whole scenes into memory.
+// (missing file, bad YAML) yield zero metadata. Used to annotate the binder.
+//
+// It reads only through the closing frontmatter delimiter rather than the whole
+// file, so annotating the tree never loads prose bodies into memory — BuildTree
+// stays cheap even for projects with many large scenes. The result matches what
+// parseFrontmatter would return for the same file's metadata.
 func readMetadata(path string) Metadata {
-	data, err := os.ReadFile(path)
+	f, err := os.Open(path)
 	if err != nil {
 		return Metadata{}
 	}
-	meta, _ := parseFrontmatter(string(data))
-	return meta
+	defer f.Close()
+
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64*1024), maxFrontmatterLine)
+
+	// The file must open with a delimiter line, else there's no frontmatter.
+	if !sc.Scan() || strings.TrimRight(sc.Text(), "\r") != frontmatterDelim {
+		return Metadata{}
+	}
+
+	var block strings.Builder
+	for sc.Scan() {
+		if strings.TrimRight(sc.Text(), "\r") == frontmatterDelim {
+			// Closing delimiter reached — parse what we collected.
+			var meta Metadata
+			if err := yaml.Unmarshal([]byte(block.String()), &meta); err != nil {
+				return Metadata{}
+			}
+			return meta
+		}
+		block.WriteString(sc.Text())
+		block.WriteByte('\n')
+	}
+
+	// No closing delimiter (or a scan error) — treat as no metadata, matching
+	// parseFrontmatter's handling of an unterminated block.
+	return Metadata{}
 }
