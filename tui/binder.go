@@ -100,7 +100,11 @@ func (m BinderModel) Update(msg tea.Msg) (BinderModel, tea.Cmd) {
 
 // View renders the binder tree.
 func (m BinderModel) View() string {
-	style := BinderStyle.Width(m.width).Height(m.height)
+	// Subtract only the border (padding is already inside lipgloss .Width()),
+	// so the rendered box is exactly m.width × m.height.
+	style := BinderStyle.
+		Width(m.width - BinderStyle.GetHorizontalBorderSize()).
+		Height(m.height - BinderStyle.GetVerticalBorderSize())
 	if m.focus {
 		style = FocusedStyle(style)
 	}
@@ -113,8 +117,8 @@ func (m BinderModel) View() string {
 		return style.Render(empty)
 	}
 
-	// Render visible window of flattened nodes.
-	visibleHeight := m.height - 2 // account for border/padding
+	// Render visible window of flattened nodes (box height minus border + padding).
+	visibleHeight := m.height - BinderStyle.GetVerticalFrameSize()
 	if visibleHeight < 1 {
 		visibleHeight = 1
 	}
@@ -221,7 +225,7 @@ func (m *BinderModel) rebuildFlat() {
 
 // scrollToCursor keeps the cursor visible.
 func (m *BinderModel) scrollToCursor() {
-	visibleHeight := m.height - 2
+	visibleHeight := m.height - BinderStyle.GetVerticalFrameSize()
 	if visibleHeight < 1 {
 		visibleHeight = 1
 	}
