@@ -1,11 +1,11 @@
 package tui
 
 import (
-	"os"
-
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/acgh213/chisel/core"
 )
 
 // EditorModel wraps bubbles/textarea for markdown editing.
@@ -97,16 +97,16 @@ func (m EditorModel) View() string {
 
 // LoadFile reads a markdown file into the editor.
 func (m *EditorModel) LoadFile(path string) error {
-	data, err := os.ReadFile(path)
+	sc, err := core.LoadScene(path)
 	if err != nil {
 		return err
 	}
 
-	m.filePath = path
-	m.original = string(data)
+	m.filePath = sc.Path
+	m.original = sc.Content
 	m.modified = false
 	m.textarea.Reset()
-	m.textarea.SetValue(m.original)
+	m.textarea.SetValue(sc.Content)
 	// Move cursor to start.
 	m.textarea.CursorStart()
 
@@ -119,12 +119,12 @@ func (m *EditorModel) Save() error {
 		return nil // nothing to save
 	}
 
-	data := []byte(m.textarea.Value())
-	if err := os.WriteFile(m.filePath, data, 0644); err != nil {
+	sc := &core.Scene{Path: m.filePath, Content: m.textarea.Value()}
+	if err := sc.Save(); err != nil {
 		return err
 	}
 
-	m.original = m.textarea.Value()
+	m.original = sc.Content
 	m.modified = false
 	return nil
 }
@@ -146,20 +146,7 @@ func (m EditorModel) Content() string {
 
 // WordCount returns an estimate of the word count.
 func (m EditorModel) WordCount() int {
-	if m.textarea.Value() == "" {
-		return 0
-	}
-	words := 0
-	inWord := false
-	for _, r := range m.textarea.Value() {
-		if r == ' ' || r == '\n' || r == '\t' {
-			inWord = false
-		} else if !inWord {
-			words++
-			inWord = true
-		}
-	}
-	return words
+	return core.WordCount(m.textarea.Value())
 }
 
 // Focus sets focus state.
@@ -191,9 +178,7 @@ func (m *EditorModel) SetSize(w, h int) {
 
 // NewScene creates a new .md file and loads it.
 func (m *EditorModel) NewScene(path string) error {
-	// Create the file with a default template.
-	content := "# Untitled\n\n"
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+	if _, err := core.CreateScene(path); err != nil {
 		return err
 	}
 	return m.LoadFile(path)
