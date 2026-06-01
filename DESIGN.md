@@ -4,15 +4,18 @@
 > Features shipped through Phase 5 are marked **[shipped]** inline below.  
 > The original v1.2 full implementation lives on `archive/chisel-full` (reference only).
 
-**Shipped through Phase 5:**
-- Binder + editor TUI with stable layout ✓
+**Shipped through Phase 8:**
+- Binder + editor TUI with stable layout (two-pane and three-pane) ✓
 - `core/` package with zero charmbracelet imports (GUI-ready seam) ✓
-- YAML frontmatter metadata per scene ✓
+- YAML frontmatter metadata per scene and per character ✓
 - Git-backed revision history (Ctrl+H) ✓
 - Corkboard (F2) and outliner (F3) views ✓
-- Compile / export to manuscript.md, optional .docx via pandoc (Ctrl+E) ✓
+- Compile/export to manuscript.md, optional .docx via pandoc (Ctrl+E) ✓
+- Binder CRUD: create/rename/delete files and folders (n/N/r/d) ✓
+- `chisel init` with minimal/novel/short-stories templates ✓
+- Right inspector panel (F5): character viewer, cast list, binder-driven ✓
 
-**Pending:** LLM assist, character sheets, themes/goals, GUI alongside TUI.
+**Pending:** Left-pane mode switching, location sheets, timeline view, quick-note popup, LLM assist, GUI alongside TUI.
 
 ## architecture
 

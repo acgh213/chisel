@@ -113,6 +113,9 @@ func computeLayout(width, height int, showRight bool) layoutSizes {
 	if rightW < 1 {
 		rightW = 1
 	}
+	// Note: at width < 3, three panes each floored to 1 sum to 3 > width.
+	// This is mathematically unavoidable — three positive integers cannot sum
+	// to less than 3 — and only affects unusably narrow terminals (< 3 cols).
 	return layoutSizes{binderW: binderW, editorW: editorW, rightPanelW: rightW, paneH: paneH}
 }
 
@@ -531,7 +534,7 @@ func (m *Model) syncRightPanel() {
 	if !m.showRightPanel {
 		return
 	}
-	m.rightPanel.SyncToSelection(m.binder.SelectedFile(), m.root)
+	m.rightPanel.SyncToSelection(m.binder.SelectedFile())
 }
 
 // ensureBackend lazily opens (initializing on first use) the revision backend
@@ -777,8 +780,9 @@ func (m Model) executePrompt() (tea.Model, tea.Cmd) {
 			break
 		}
 		m.binder.RefreshPreservingExpanded()
-		m.syncRightPanel()
 		m.binder.SelectPath(path)
+		m.rightPanel.markCastDirty()
+		m.syncRightPanel()
 		m.focus = PaneEditor
 		m.binder.Focus(false)
 		m.editor.Focus(true)
@@ -800,8 +804,9 @@ func (m Model) executePrompt() (tea.Model, tea.Cmd) {
 			break
 		}
 		m.binder.RefreshPreservingExpanded()
-		m.syncRightPanel()
 		m.binder.SelectPath(newPath)
+		m.rightPanel.markCastDirty()
+		m.syncRightPanel()
 		m.statusMsg = fmt.Sprintf("Created folder '%s'", name)
 		m.statusTimer = 2
 		cmds = append(cmds, statusTick())
@@ -823,8 +828,9 @@ func (m Model) executePrompt() (tea.Model, tea.Cmd) {
 			m.editor.SetPath(newPath)
 		}
 		m.binder.RefreshPreservingExpanded()
-		m.syncRightPanel()
 		m.binder.SelectPath(newPath)
+		m.rightPanel.markCastDirty()
+		m.syncRightPanel()
 		m.statusMsg = fmt.Sprintf("Renamed to '%s'", filepath.Base(newPath))
 		m.statusTimer = 2
 		cmds = append(cmds, statusTick())
@@ -838,11 +844,11 @@ func (m Model) executePrompt() (tea.Model, tea.Cmd) {
 			break
 		}
 		// Clear the editor if the open file (or a file inside a deleted folder) is gone.
-		openPath := m.editor.FilePath()
-		if openPath == ctx || strings.HasPrefix(openPath, ctx+string(filepath.Separator)) {
+		if isUnderDir(m.editor.FilePath(), ctx) {
 			m.editor.Clear()
 		}
 		m.binder.RefreshPreservingExpanded()
+		m.rightPanel.markCastDirty()
 		m.syncRightPanel()
 		m.statusMsg = fmt.Sprintf("Deleted '%s'", baseName)
 		m.statusTimer = 2

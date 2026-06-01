@@ -102,14 +102,20 @@ func parseFrontmatter(raw string) (Metadata, string) {
 	return meta, body
 }
 
-// serializeScene renders metadata + body into the on-disk representation. When
-// the metadata is empty it returns just the body (no frontmatter), so plain
-// files never sprout an empty header.
-func serializeScene(meta Metadata, body string) (string, error) {
+// emptyChecker is satisfied by any metadata type that can report whether it
+// carries no information. Used by serializeFrontmatter to decide whether to
+// emit a frontmatter block.
+type emptyChecker interface {
+	IsEmpty() bool
+}
+
+// serializeFrontmatter is the single serialization path for all frontmatter
+// types (scene metadata, character metadata, …). When meta.IsEmpty() it
+// returns just the body so plain files never sprout an empty header.
+func serializeFrontmatter(meta emptyChecker, body string) (string, error) {
 	if meta.IsEmpty() {
 		return body, nil
 	}
-
 	var buf bytes.Buffer
 	enc := yaml.NewEncoder(&buf)
 	enc.SetIndent(2)
@@ -119,8 +125,12 @@ func serializeScene(meta Metadata, body string) (string, error) {
 	if err := enc.Close(); err != nil {
 		return "", err
 	}
-
 	return frontmatterDelim + "\n" + buf.String() + frontmatterDelim + "\n" + body, nil
+}
+
+// serializeScene renders scene metadata + body into the on-disk representation.
+func serializeScene(meta Metadata, body string) (string, error) {
+	return serializeFrontmatter(meta, body)
 }
 
 // readMetadata reads only the metadata for a scene file, best-effort. Errors

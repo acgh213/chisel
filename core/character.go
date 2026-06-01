@@ -1,8 +1,6 @@
 package core
 
 import (
-	"bytes"
-	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -112,17 +110,5 @@ func parseCharacterFrontmatter(raw string) (CharacterMeta, string) {
 }
 
 func serializeCharacter(meta CharacterMeta, body string) (string, error) {
-	if meta.IsEmpty() {
-		return body, nil
-	}
-	var buf bytes.Buffer
-	enc := yaml.NewEncoder(&buf)
-	enc.SetIndent(2)
-	if err := enc.Encode(meta); err != nil {
-		return "", fmt.Errorf("encoding character metadata: %w", err)
-	}
-	if err := enc.Close(); err != nil {
-		return "", err
-	}
-	return frontmatterDelim + "\n" + buf.String() + frontmatterDelim + "\n" + body, nil
+	return serializeFrontmatter(meta, body)
 }

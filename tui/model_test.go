@@ -178,7 +178,9 @@ func TestComputeLayoutThreePaneSumsToWidth(t *testing.T) {
 }
 
 // TestComputeLayoutThreePaneSumInvariant checks the three-pane sum holds for
-// all widths >= 3.
+// all widths >= 3. Below 3 columns the sum exceeds width by design: three
+// panes each floored to 1 must sum to at least 3, so the invariant cannot
+// hold on a < 3-column terminal. The clamp test covers those widths separately.
 func TestComputeLayoutThreePaneSumInvariant(t *testing.T) {
 	for w := 3; w <= 300; w++ {
 		l := computeLayout(w, 24, true)
