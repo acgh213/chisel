@@ -1,25 +1,37 @@
 package main
 
 import (
+	"bufio"
+	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/acgh213/chisel/core"
 	"github.com/acgh213/chisel/tui"
 )
 
 func main() {
-	// Parse arguments: chisel <directory>
+	// Subcommand dispatch must happen before any os.Stat on args, so that
+	// "init" is not mistakenly stat'd as a directory.
+	if len(os.Args) >= 2 && os.Args[1] == "init" {
+		runInit(os.Args[2:])
+		return
+	}
+
 	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "Usage: chisel <project-directory>\n")
-		fmt.Fprintf(os.Stderr, "\nOpens a directory as a writing project.\n")
-		fmt.Fprintf(os.Stderr, "Folders and .md files become the binder tree.\n")
+		fmt.Fprintf(os.Stderr, "Usage:\n")
+		fmt.Fprintf(os.Stderr, "  chisel <project-directory>       open a project in the editor\n")
+		fmt.Fprintf(os.Stderr, "  chisel init [directory]          create a new project\n")
+		fmt.Fprintf(os.Stderr, "  chisel init --template <tmpl> [directory]\n")
+		fmt.Fprintf(os.Stderr, "\nTemplates: minimal, novel (default), short-stories\n")
 		os.Exit(1)
 	}
 
 	root := os.Args[1]
-
-	// Verify the directory exists.
 	info, err := os.Stat(root)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -30,17 +42,112 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Create the root model.
+	launchTUI(root)
+}
+
+// launchTUI opens root in the chisel TUI. It does not return until the user quits.
+func launchTUI(root string) {
 	model, err := tui.NewModel(root)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
-
-	// Run the TUI.
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
+	}
+}
+
+// runInit handles the `chisel init` subcommand.
+func runInit(args []string) {
+	fs := flag.NewFlagSet("init", flag.ExitOnError)
+	templateFlag := fs.String("template", "", "template: minimal, novel (default), short-stories")
+	noOpen := fs.Bool("no-open", false, "scaffold only; do not open the TUI after creation")
+	fs.Parse(args)
+
+	positional := fs.Args()
+
+	var (
+		dir  string
+		name string
+		tmpl core.Template
+	)
+
+	if *templateFlag == "" && len(positional) == 0 {
+		// Interactive mode: read project name and template choice from stdin.
+		reader := bufio.NewReader(os.Stdin)
+
+		fmt.Print("Project name: ")
+		line, _ := reader.ReadString('\n')
+		name = strings.TrimSpace(line)
+		if name == "" {
+			name = "my-project"
+		}
+
+		fmt.Println("Template:")
+		fmt.Println("  1) minimal       — bare directory with README")
+		fmt.Println("  2) novel         — scenes/, characters/, locations/ with sample chapters")
+		fmt.Println("  3) short-stories — single story file to start")
+		fmt.Print("Choice [2]: ")
+		choice, _ := reader.ReadString('\n')
+		switch strings.TrimSpace(choice) {
+		case "1":
+			tmpl = core.TemplateMinimal
+		case "3":
+			tmpl = core.TemplateShortStories
+		default:
+			tmpl = core.TemplateNovel
+		}
+
+		slug := core.Slugify(name)
+		if slug == "" {
+			fmt.Fprintf(os.Stderr, "Error: project name %q produces an empty directory name\n", name)
+			os.Exit(1)
+		}
+		dir = filepath.Join(".", slug)
+	} else {
+		// Non-interactive mode: all options come from flags and positional args.
+		// Flags must precede positional args (standard flag.FlagSet behaviour).
+		rawTmpl := *templateFlag
+		if rawTmpl == "" {
+			rawTmpl = "novel" // default template
+		}
+		var ok bool
+		tmpl, ok = core.ParseTemplate(rawTmpl)
+		if !ok {
+			fmt.Fprintf(os.Stderr, "Error: unknown template %q — choose: minimal, novel, short-stories\n", rawTmpl)
+			os.Exit(1)
+		}
+
+		if len(positional) > 0 {
+			dir = positional[0]
+		} else {
+			dir = "."
+		}
+
+		// Derive a display name from the directory.
+		base := filepath.Base(dir)
+		if base == "." {
+			wd, _ := os.Getwd()
+			base = filepath.Base(wd)
+		}
+		name = base
+	}
+
+	opts := core.ScaffoldOptions{Name: name, Template: tmpl}
+	if err := core.ScaffoldProject(dir, opts); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		absDir = dir
+	}
+	fmt.Printf("Created '%s' from the %s template.\n", dir, string(tmpl))
+
+	if !*noOpen {
+		launchTUI(absDir)
 	}
 }
