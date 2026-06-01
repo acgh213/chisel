@@ -237,6 +237,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.focus = PaneBinder
 				m.editor.Focus(false)
 				m.binder.Focus(true)
+				// Sync the panel when focus returns to the binder — the editor
+				// may have saved a character file while focused, changing what
+				// the panel should display.
+				m.syncRightPanel()
 			}
 
 		case "enter":
@@ -275,6 +279,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if serr := m.snapshot(path, commitMsg); serr != nil {
 						m.statusMsg = fmt.Sprintf("Saved %s (snapshot failed: %v)", filepath.Base(path), serr)
 					}
+					// Refresh the panel — the saved file may be a character
+					// whose display details just changed.
+					m.syncRightPanel()
 				}
 				m.statusTimer = 3
 				cmds = append(cmds, statusTick())
