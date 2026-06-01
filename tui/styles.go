@@ -16,11 +16,6 @@ var (
 	ColorRed       = lipgloss.Color("#c48882") // modified indicator, errors
 )
 
-// Base app style — full terminal background.
-var AppStyle = lipgloss.NewStyle().
-	Background(ColorBg).
-	Foreground(ColorFg)
-
 // Pane styles.
 var (
 	BinderStyle = lipgloss.NewStyle().
@@ -129,8 +124,4 @@ var (
 
 	TreeFileStyle = lipgloss.NewStyle().
 			Foreground(ColorFg)
-
-	TreeModifiedStyle = lipgloss.NewStyle().
-				Foreground(ColorRed).
-				Italic(true)
 )

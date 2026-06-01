@@ -209,11 +209,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updatePrompt(msg)
 		}
 
-		// Capture the pending-quit state before clearing it: the
-		// "press Ctrl+Q again" guard reads the value from the *previous*
-		// key press, while any key cancels a pending quit for the next one.
+		// Capture the pending-quit state before the switch so the
+		// "press Ctrl+Q again" guard reads the *previous* key press.
+		// pendingQuit is cleared in the default case and on status expiry.
 		wasPending := m.pendingQuit
-		m.pendingQuit = false
 
 		switch msg.String() {
 		case "ctrl+q", "esc":
@@ -238,6 +237,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.focus = PaneBinder
 				m.editor.Focus(false)
 				m.binder.Focus(true)
+				// Sync the panel when focus returns to the binder — the editor
+				// may have saved a character file while focused, changing what
+				// the panel should display.
+				m.syncRightPanel()
 			}
 
 		case "enter":
@@ -276,6 +279,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if serr := m.snapshot(path, commitMsg); serr != nil {
 						m.statusMsg = fmt.Sprintf("Saved %s (snapshot failed: %v)", filepath.Base(path), serr)
 					}
+					// Refresh the panel — the saved file may be a character
+					// whose display details just changed.
+					m.syncRightPanel()
 				}
 				m.statusTimer = 3
 				cmds = append(cmds, statusTick())
@@ -385,6 +391,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// "enter") forward to the editor themselves when focused; this
 			// catches everything else so a future key case can't silently
 			// swallow editor input.
+			m.pendingQuit = false
 			if m.focus == PaneBinder {
 				var cmd tea.Cmd
 				m.binder, cmd = m.binder.Update(msg)
@@ -716,6 +723,7 @@ func (m Model) updateView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.viewMode = viewMain
 	case viewActionOpen:
 		if path != "" {
+			m.syncRightPanel()
 			return m, m.openScene(path)
 		}
 	}
@@ -771,7 +779,11 @@ func (m Model) executePrompt() (tea.Model, tea.Cmd) {
 			return m, tea.Batch(append(cmds, statusTick())...)
 		}
 		if m.editor.IsModified() {
-			m.editor.Save()
+			if err := m.editor.Save(); err != nil {
+				m.statusMsg = fmt.Sprintf("Error saving: %v", err)
+				m.statusTimer = 3
+				return m, tea.Batch(statusTick())
+			}
 		}
 		if err := m.editor.NewScene(path); err != nil {
 			m.statusMsg = fmt.Sprintf("Error creating scene: %v", err)

@@ -32,6 +32,12 @@ func main() {
 	}
 
 	root := os.Args[1]
+	// Detect flags before subcommand (e.g. "chisel --template novel init")
+	// and produce a friendlier error than "no such file or directory".
+	if strings.HasPrefix(root, "-") {
+		fmt.Fprintf(os.Stderr, "Error: %q looks like a flag. Did you mean 'chisel init %s'?\n", root, root)
+		os.Exit(1)
+	}
 	info, err := os.Stat(root)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -78,19 +84,27 @@ func runInit(args []string) {
 		// Interactive mode: read project name and template choice from stdin.
 		reader := bufio.NewReader(os.Stdin)
 
-		fmt.Print("Project name: ")
-		line, _ := reader.ReadString('\n')
+		fmt.Fprint(os.Stderr, "Project name: ")
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading input: %v\n", err)
+			os.Exit(1)
+		}
 		name = strings.TrimSpace(line)
 		if name == "" {
 			name = "my-project"
 		}
 
-		fmt.Println("Template:")
-		fmt.Println("  1) minimal       — bare directory with README")
-		fmt.Println("  2) novel         — scenes/, characters/, locations/ with sample chapters")
-		fmt.Println("  3) short-stories — single story file to start")
-		fmt.Print("Choice [2]: ")
-		choice, _ := reader.ReadString('\n')
+		fmt.Fprintln(os.Stderr, "Template:")
+		fmt.Fprintln(os.Stderr, "  1) minimal       — bare directory with README")
+		fmt.Fprintln(os.Stderr, "  2) novel         — scenes/, characters/, locations/ with sample chapters")
+		fmt.Fprintln(os.Stderr, "  3) short-stories — single story file to start")
+		fmt.Fprint(os.Stderr, "Choice [2]: ")
+		choice, err := reader.ReadString('\n')
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading input: %v\n", err)
+			os.Exit(1)
+		}
 		switch strings.TrimSpace(choice) {
 		case "1":
 			tmpl = core.TemplateMinimal
@@ -105,7 +119,7 @@ func runInit(args []string) {
 			fmt.Fprintf(os.Stderr, "Error: project name %q produces an empty directory name\n", name)
 			os.Exit(1)
 		}
-		dir = filepath.Join(".", slug)
+		dir = slug
 	} else {
 		// Non-interactive mode: all options come from flags and positional args.
 		// Flags must precede positional args (standard flag.FlagSet behaviour).
@@ -129,8 +143,12 @@ func runInit(args []string) {
 		// Derive a display name from the directory.
 		base := filepath.Base(dir)
 		if base == "." {
-			wd, _ := os.Getwd()
-			base = filepath.Base(wd)
+			wd, err := os.Getwd()
+			if err != nil {
+				base = "project"
+			} else {
+				base = filepath.Base(wd)
+			}
 		}
 		name = base
 	}
@@ -145,7 +163,7 @@ func runInit(args []string) {
 	if err != nil {
 		absDir = dir
 	}
-	fmt.Printf("Created '%s' from the %s template.\n", dir, string(tmpl))
+	fmt.Printf("Created '%s' from the %s template.\n", absDir, string(tmpl))
 
 	if !*noOpen {
 		launchTUI(absDir)
