@@ -84,6 +84,13 @@ var (
 	MetTargetStyle = lipgloss.NewStyle().Foreground(ColorGreen)
 )
 
+// PromptBarStyle is the inline text-input bar that replaces the status bar
+// during binder CRUD operations (new file/folder, rename, delete confirm).
+var PromptBarStyle = lipgloss.NewStyle().
+	Background(ColorHighlight).
+	Foreground(ColorAccent).
+	Padding(0, 1)
+
 // Tree node styles.
 var (
 	TreeSelectedStyle = lipgloss.NewStyle().

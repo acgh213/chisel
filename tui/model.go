@@ -106,6 +106,9 @@ type Model struct {
 	// pandocPath is the resolved path to the pandoc binary, or "" if not
 	// found. Detected once in NewModel; gates the .docx export offer.
 	pandocPath string
+
+	// prompt is the inline bottom-bar input for binder CRUD (new, rename, delete).
+	prompt binderPrompt
 }
 
 // NewModel creates a new chisel root model for the given project directory.
@@ -126,6 +129,7 @@ func NewModel(root string) (Model, error) {
 		focus:      PaneBinder,
 		root:       root,
 		pandocPath: pandocPath,
+		prompt:     newBinderPrompt(),
 	}, nil
 }
 
@@ -151,6 +155,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// A structural view (corkboard/outliner) likewise owns all keys.
 		if m.viewMode != viewMain {
 			return m.updateView(msg)
+		}
+		// An active binder prompt owns all keys — must precede esc/quit handling
+		// so Esc cancels the prompt instead of quitting the app.
+		if m.prompt.active() {
+			return m.updatePrompt(msg)
 		}
 
 		// Capture the pending-quit state before clearing it: the
@@ -240,8 +249,50 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, statusTick())
 			}
 
-		case "ctrl+n":
-			return m, m.newScenePrompt()
+		case "ctrl+n", "n":
+			if msg.String() == "n" && m.focus != PaneBinder {
+				// 'n' in the editor inserts a literal 'n'.
+				var cmd tea.Cmd
+				m.editor, cmd = m.editor.Update(msg)
+				cmds = append(cmds, cmd)
+				break
+			}
+			dir := m.binder.CurrentDir()
+			m.prompt.open(promptNewFile, dir, "New scene:", "my-scene")
+
+		case "N":
+			if m.focus != PaneBinder {
+				var cmd tea.Cmd
+				m.editor, cmd = m.editor.Update(msg)
+				cmds = append(cmds, cmd)
+				break
+			}
+			dir := m.binder.CurrentDir()
+			m.prompt.open(promptNewFolder, dir, "New folder:", "chapter-1")
+
+		case "r":
+			if m.focus != PaneBinder {
+				var cmd tea.Cmd
+				m.editor, cmd = m.editor.Update(msg)
+				cmds = append(cmds, cmd)
+				break
+			}
+			if node := m.binder.SelectedNode(); node != nil {
+				m.prompt.open(promptRename, node.Path,
+					fmt.Sprintf("Rename '%s' to:", node.Name), node.Name)
+			}
+
+		case "d":
+			if m.focus != PaneBinder {
+				var cmd tea.Cmd
+				m.editor, cmd = m.editor.Update(msg)
+				cmds = append(cmds, cmd)
+				break
+			}
+			if node := m.binder.SelectedNode(); node != nil {
+				m.prompt.open(promptDelete, node.Path,
+					fmt.Sprintf("Delete '%s'? (y=confirm  Esc=cancel)", node.Name), "")
+			}
 
 		case "f2":
 			if err := m.enterCorkboard(); err != nil {
@@ -296,32 +347,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.layout()
 		return m, nil
-
-	case newSceneMsg:
-		if msg.err != nil {
-			m.statusMsg = fmt.Sprintf("Error creating scene: %v", msg.err)
-			m.statusTimer = 3
-			cmds = append(cmds, statusTick())
-		} else {
-			if m.editor.IsModified() {
-				m.editor.Save()
-			}
-			if err := m.editor.NewScene(msg.path); err != nil {
-				m.statusMsg = fmt.Sprintf("Error: %v", err)
-				m.statusTimer = 3
-				cmds = append(cmds, statusTick())
-			} else {
-				m.binder.Refresh()
-				m.focus = PaneEditor
-				m.binder.Focus(false)
-				m.editor.Focus(true)
-				m.statusMsg = "New scene created."
-				m.statusTimer = 2
-				// Init() arms the cursor blink on focus gain.
-				cmds = append(cmds, statusTick(), m.editor.Init())
-			}
-		}
-		return m, tea.Batch(cmds...)
 
 	case statusTickMsg:
 		if m.statusTimer > 0 {
@@ -398,20 +423,24 @@ func (m Model) View() string {
 		}
 
 		if m.focus == PaneBinder {
-			statusParts = append(statusParts, "[Binder]  Tab=Switch  F2=Corkboard  F3=Outliner  ^H=History  ^E=Export")
+			statusParts = append(statusParts, "[Binder]  Tab=Switch  n=New  N=Folder  r=Rename  d=Delete  F2=Corkboard  F3=Outliner")
 		} else {
 			statusParts = append(statusParts, "[Editor]  Tab=Switch  ^S=Save  ^N=New  F2=Corkboard  F3=Outliner  ^E=Export")
 		}
 	}
 
-	// The status bar is always exactly one row. Truncate the joined text to the
-	// inner width (box minus padding) so a long hint can't wrap to a second line
-	// and push the layout past the terminal height; MaxHeight(1) is a backstop.
-	statusText := truncate(strings.Join(statusParts, "  │  "),
-		m.width-StatusBarStyle.GetHorizontalFrameSize())
-	status := StatusBarStyle.Width(m.width).MaxHeight(1).Render(statusText)
+	// The bottom row is either the prompt bar (during CRUD operations) or the
+	// regular status bar. Both are exactly one row.
+	var bottomBar string
+	if m.prompt.active() {
+		bottomBar = m.prompt.view(m.width)
+	} else {
+		statusText := truncate(strings.Join(statusParts, "  │  "),
+			m.width-StatusBarStyle.GetHorizontalFrameSize())
+		bottomBar = StatusBarStyle.Width(m.width).MaxHeight(1).Render(statusText)
+	}
 
-	return lipgloss.JoinVertical(lipgloss.Left, body, status)
+	return lipgloss.JoinVertical(lipgloss.Left, body, bottomBar)
 }
 
 // layout recalculates pane sizes after a window resize. It is the single place
@@ -616,32 +645,136 @@ func (m Model) updateView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// newScenePrompt handles the Ctrl+N new-scene flow.
-func (m *Model) newScenePrompt() tea.Cmd {
-	scenesDir := filepath.Join(m.root, "scenes")
-	if info, err := os.Stat(scenesDir); err != nil || !info.IsDir() {
-		scenesDir = m.root
+// updatePrompt routes a key press to the active binder prompt.
+func (m Model) updatePrompt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch m.prompt.mode {
+	case promptDelete:
+		switch msg.String() {
+		case "y", "Y":
+			return m.executePrompt()
+		default:
+			// Any other key (including Esc, n, N) cancels.
+			m.prompt.close()
+		}
+		return m, nil
+	default:
+		switch msg.String() {
+		case "esc":
+			m.prompt.close()
+			return m, nil
+		case "enter":
+			return m.executePrompt()
+		default:
+			var cmd tea.Cmd
+			m.prompt, cmd = m.prompt.update(msg)
+			return m, cmd
+		}
+	}
+}
+
+// executePrompt commits the active prompt action (create, rename, or delete).
+func (m Model) executePrompt() (tea.Model, tea.Cmd) {
+	var cmds []tea.Cmd
+	mode := m.prompt.mode
+	ctx := m.prompt.context
+	name := strings.TrimSpace(m.prompt.value())
+	m.prompt.close()
+
+	switch mode {
+	case promptNewFile:
+		if name == "" {
+			m.statusMsg = "Name cannot be empty."
+			m.statusTimer = 2
+			return m, tea.Batch(append(cmds, statusTick())...)
+		}
+		path := filepath.Join(ctx, name+".md")
+		if fileExists(path) {
+			m.statusMsg = fmt.Sprintf("'%s.md' already exists.", name)
+			m.statusTimer = 3
+			return m, tea.Batch(append(cmds, statusTick())...)
+		}
+		if m.editor.IsModified() {
+			m.editor.Save()
+		}
+		if err := m.editor.NewScene(path); err != nil {
+			m.statusMsg = fmt.Sprintf("Error creating scene: %v", err)
+			m.statusTimer = 3
+			cmds = append(cmds, statusTick())
+			break
+		}
+		m.binder.RefreshPreservingExpanded()
+		m.binder.SelectPath(path)
+		m.focus = PaneEditor
+		m.binder.Focus(false)
+		m.editor.Focus(true)
+		m.statusMsg = fmt.Sprintf("Created '%s.md'", name)
+		m.statusTimer = 2
+		cmds = append(cmds, statusTick(), m.editor.Init())
+
+	case promptNewFolder:
+		if name == "" {
+			m.statusMsg = "Name cannot be empty."
+			m.statusTimer = 2
+			return m, tea.Batch(append(cmds, statusTick())...)
+		}
+		newPath, err := core.CreateFolder(ctx, name)
+		if err != nil {
+			m.statusMsg = fmt.Sprintf("Error creating folder: %v", err)
+			m.statusTimer = 3
+			cmds = append(cmds, statusTick())
+			break
+		}
+		m.binder.RefreshPreservingExpanded()
+		m.binder.SelectPath(newPath)
+		m.statusMsg = fmt.Sprintf("Created folder '%s'", name)
+		m.statusTimer = 2
+		cmds = append(cmds, statusTick())
+
+	case promptRename:
+		if name == "" {
+			m.statusMsg = "Name cannot be empty."
+			m.statusTimer = 2
+			return m, tea.Batch(append(cmds, statusTick())...)
+		}
+		newPath, err := core.RenameNode(ctx, name)
+		if err != nil {
+			m.statusMsg = fmt.Sprintf("Error renaming: %v", err)
+			m.statusTimer = 3
+			cmds = append(cmds, statusTick())
+			break
+		}
+		if m.editor.FilePath() == ctx {
+			m.editor.SetPath(newPath)
+		}
+		m.binder.RefreshPreservingExpanded()
+		m.binder.SelectPath(newPath)
+		m.statusMsg = fmt.Sprintf("Renamed to '%s'", filepath.Base(newPath))
+		m.statusTimer = 2
+		cmds = append(cmds, statusTick())
+
+	case promptDelete:
+		baseName := filepath.Base(ctx)
+		if err := core.DeleteNode(ctx); err != nil {
+			m.statusMsg = fmt.Sprintf("Error deleting: %v", err)
+			m.statusTimer = 3
+			cmds = append(cmds, statusTick())
+			break
+		}
+		// Clear the editor if the open file (or a file inside a deleted folder) is gone.
+		openPath := m.editor.FilePath()
+		if openPath == ctx || strings.HasPrefix(openPath, ctx+string(filepath.Separator)) {
+			m.editor.Clear()
+		}
+		m.binder.RefreshPreservingExpanded()
+		m.statusMsg = fmt.Sprintf("Deleted '%s'", baseName)
+		m.statusTimer = 2
+		cmds = append(cmds, statusTick())
 	}
 
-	filename := "new-scene.md"
-	path := filepath.Join(scenesDir, filename)
-
-	for i := 2; fileExists(path); i++ {
-		filename = fmt.Sprintf("new-scene-%d.md", i)
-		path = filepath.Join(scenesDir, filename)
-	}
-
-	return func() tea.Msg {
-		return newSceneMsg{path: path}
-	}
+	return m, tea.Batch(cmds...)
 }
 
 // Custom message types.
-type newSceneMsg struct {
-	path string
-	err  error
-}
-
 type statusTickMsg struct{}
 
 func statusTick() tea.Cmd {
