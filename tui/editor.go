@@ -204,3 +204,21 @@ func (m *EditorModel) NewScene(path string) error {
 	}
 	return m.LoadFile(path)
 }
+
+// Clear unloads the current scene so the editor shows its "no file open" state.
+// Used when the open file is deleted from the binder.
+func (m *EditorModel) Clear() {
+	m.scene = nil
+	m.original = ""
+	m.modified = false
+	m.textarea.Reset()
+}
+
+// SetPath updates the file path stored on the current scene without reloading
+// its content. Used after a binder rename so the next Ctrl+S writes to the new
+// path.
+func (m *EditorModel) SetPath(newPath string) {
+	if m.scene != nil {
+		m.scene.Path = newPath
+	}
+}

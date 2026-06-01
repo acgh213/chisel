@@ -196,6 +196,63 @@ func (m BinderModel) SelectedFile() string {
 	return node.Path
 }
 
+// SelectedNode returns the currently selected node (file or directory), or nil.
+func (m BinderModel) SelectedNode() *core.FileNode {
+	if m.cursor < 0 || m.cursor >= len(m.flat) {
+		return nil
+	}
+	return m.flat[m.cursor]
+}
+
+// SelectPath moves the cursor to the node at path, if visible. Used to restore
+// cursor position after a CRUD operation that may have moved/created a node.
+func (m *BinderModel) SelectPath(path string) {
+	for i, n := range m.flat {
+		if n.Path == path {
+			m.cursor = i
+			m.scrollToCursor()
+			return
+		}
+	}
+}
+
+// RefreshPreservingExpanded rescans the project directory like Refresh, but
+// restores the expanded/collapsed state of any folders that still exist after
+// the rescan. Use this for CRUD operations so the user's open folders don't
+// collapse unexpectedly.
+func (m *BinderModel) RefreshPreservingExpanded() error {
+	// Collect currently-expanded directory paths.
+	expanded := make(map[string]bool)
+	for _, n := range m.flat {
+		if n.IsDir && n.Expanded {
+			expanded[n.Path] = true
+		}
+	}
+
+	if err := m.Refresh(); err != nil {
+		return err
+	}
+
+	if len(expanded) > 0 {
+		restoreExpanded(m.nodes, expanded)
+		m.rebuildFlat()
+	}
+	return nil
+}
+
+// restoreExpanded walks nodes and re-sets Expanded on any directory whose path
+// is in the expanded set.
+func restoreExpanded(nodes []*core.FileNode, expanded map[string]bool) {
+	for _, n := range nodes {
+		if n.IsDir && expanded[n.Path] {
+			n.Expanded = true
+		}
+		if len(n.Children) > 0 {
+			restoreExpanded(n.Children, expanded)
+		}
+	}
+}
+
 // IsDirSelected returns true if the selected node is a directory.
 func (m BinderModel) IsDirSelected() bool {
 	if m.cursor < 0 || m.cursor >= len(m.flat) {
