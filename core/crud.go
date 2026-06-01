@@ -4,11 +4,19 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
+// pathSep is a string containing both forward and backslashes for path traversal checks.
+const pathSep = "/\\"
+
 // CreateFolder creates a new directory named name inside dir. Returns the new
-// path, or an error if the directory already exists or cannot be created.
+// path, or an error if the name contains path separators, the directory already
+// exists, or it cannot be created.
 func CreateFolder(dir, name string) (string, error) {
+	if strings.ContainsAny(name, pathSep) {
+		return "", fmt.Errorf("'%s' contains path separators", name)
+	}
 	path := filepath.Join(dir, name)
 	if _, err := os.Stat(path); err == nil {
 		return "", fmt.Errorf("'%s' already exists", name)
@@ -21,9 +29,13 @@ func CreateFolder(dir, name string) (string, error) {
 
 // RenameNode renames the file or directory at path so that its basename
 // becomes newName. For .md scene files the .md extension is added automatically
-// if newName does not already carry it. Returns the new full path, or an error
-// if the target already exists or the rename fails.
+// if newName does not already carry it. newName must not contain path separators.
+// Returns the new full path, or an error if the target already exists or the
+// rename fails.
 func RenameNode(path, newName string) (string, error) {
+	if strings.ContainsAny(newName, pathSep) {
+		return "", fmt.Errorf("'%s' contains path separators", newName)
+	}
 	dir := filepath.Dir(path)
 	if filepath.Ext(path) == ".md" && filepath.Ext(newName) != ".md" {
 		newName += ".md"

@@ -82,7 +82,7 @@ func WordCount(content string) int {
 	words := 0
 	inWord := false
 	for _, r := range content {
-		if r == ' ' || r == '\n' || r == '\t' {
+		if r == ' ' || r == '\n' || r == '\t' || r == '\r' {
 			inWord = false
 		} else if !inWord {
 			words++
