@@ -157,6 +157,10 @@ type Model struct {
 	// is binder-driven (it reflects the current selection, no independent focus).
 	showRightPanel bool
 	rightPanel     rightPanelModel
+
+	// Quick-note popup (Phase 11). Backtick opens from any state; the popup
+	// owns all keys while active and is checked before all other dispatch.
+	quickNote quickNoteModel
 }
 
 // NewModel creates a new chisel root model for the given project directory.
@@ -179,6 +183,7 @@ func NewModel(root string) (Model, error) {
 		pandocPath: pandocPath,
 		prompt:     newBinderPrompt(),
 		rightPanel: newRightPanel(root),
+		quickNote:  newQuickNote(),
 	}, nil
 }
 
@@ -197,11 +202,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// Backtick opens the quick-note popup from any state.
+		if msg.String() == "`" && !m.quickNote.active() {
+			cmd := m.quickNote.open()
+			return m, cmd
+		}
+		// When the quick-note popup is open it owns all keys.
+		if m.quickNote.active() {
+			return m.updateQuickNote(msg)
+		}
 		// When the history browser is open it owns all keys.
 		if m.showHistory {
 			return m.updateHistory(msg)
 		}
-		// A structural view (corkboard/outliner) likewise owns all keys.
+		// A structural view (corkboard/outliner/timeline) likewise owns all keys.
 		if m.viewMode != viewMain {
 			return m.updateView(msg)
 		}
@@ -526,7 +540,14 @@ func (m Model) View() string {
 		bottomBar = StatusBarStyle.Width(m.width).MaxHeight(1).Render(statusText)
 	}
 
-	return lipgloss.JoinVertical(lipgloss.Left, body, bottomBar)
+	full := lipgloss.JoinVertical(lipgloss.Left, body, bottomBar)
+
+	// Quick-note popup overlays the entire view when active.
+	if m.quickNote.active() {
+		return m.quickNote.view(m.width, m.height)
+	}
+
+	return full
 }
 
 // layout recalculates pane sizes after a window resize or panel toggle. It is
@@ -599,6 +620,28 @@ func (m *Model) openHistory() error {
 	m.history.SetSize(m.width, histH)
 	m.showHistory = true
 	return nil
+}
+
+// updateQuickNote routes a key press to the quick-note popup.
+func (m Model) updateQuickNote(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	qn, action, cmd := m.quickNote.update(msg)
+	m.quickNote = qn
+
+	switch action {
+	case quickNoteConfirmed:
+		text := m.quickNote.value()
+		m.quickNote.close()
+		if err := core.AppendScratch(m.root, text); err != nil {
+			m.statusMsg = fmt.Sprintf("Note error: %v", err)
+		} else {
+			m.statusMsg = "Note saved → notes/scratch.md"
+		}
+		m.statusTimer = 3
+		return m, tea.Batch(statusTick(), cmd)
+	case quickNoteCancelled:
+		return m, cmd
+	}
+	return m, cmd
 }
 
 // updateHistory routes a key press to the history browser and applies whatever
