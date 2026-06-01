@@ -14,29 +14,63 @@ import (
 type rpContent int
 
 const (
-	rpContentEmpty rpContent = iota // no characters/ dir, or empty
-	rpContentCast                   // project cast list (non-character file selected)
-	rpContentChar                   // a specific character's detail
-	rpContentError                  // character file found but could not be loaded
+	rpContentEmpty  rpContent = iota // no characters or locations exist yet
+	rpContentWorld                   // combined cast + locations index
+	rpContentEntity                  // a specific character or location detail
+	rpContentError                   // entity file found but could not be loaded
 )
+
+// entityDetail holds the display fields for one character or location. Using a
+// shared struct means buildEntityLines renders both without branching on type.
+type entityDetail struct {
+	header      string // panel section header: "Characters" / "Locations"
+	name        string
+	typeLabel   string // role (characters) or type (locations)
+	description string
+	tags        []string
+	body        string
+}
+
+func entityFromCharacter(c *core.Character) entityDetail {
+	return entityDetail{
+		header:      "Characters",
+		name:        c.DisplayName(),
+		typeLabel:   c.Meta.Role,
+		description: c.Meta.Description,
+		tags:        c.Meta.Tags,
+		body:        c.Body,
+	}
+}
+
+func entityFromLocation(l *core.Location) entityDetail {
+	return entityDetail{
+		header:      "Locations",
+		name:        l.DisplayName(),
+		typeLabel:   l.Meta.Type,
+		description: l.Meta.Description,
+		tags:        l.Meta.Tags,
+		body:        l.Body,
+	}
+}
 
 // rightPanelModel is the read-only right-hand inspector panel. It is
 // binder-driven: it reflects the binder's current selection rather than
 // maintaining its own cursor. No focus, no key handling.
 type rightPanelModel struct {
-	content   rpContent
-	char      *core.Character  // non-nil when rpContentChar
-	cast      []core.Character // cached cast list
-	castStale bool             // true when cast needs reloading from disk
-	errMsg    string           // set when rpContentError
-	root      string
-	width     int
-	height    int
+	content    rpContent
+	entity     entityDetail
+	cast       []core.Character // cached character list
+	locs       []core.Location  // cached location list
+	worldStale bool             // true when either list needs reloading from disk
+	errMsg     string           // set when rpContentError
+	root       string
+	width      int
+	height     int
 }
 
 // newRightPanel creates a panel for the given project root.
 func newRightPanel(root string) rightPanelModel {
-	return rightPanelModel{root: root, content: rpContentEmpty, castStale: true}
+	return rightPanelModel{root: root, content: rpContentEmpty, worldStale: true}
 }
 
 // SetSize updates the panel dimensions.
@@ -45,11 +79,11 @@ func (r *rightPanelModel) SetSize(w, h int) {
 	r.height = h
 }
 
-// markCastDirty signals that the cast list should be reloaded on the next sync.
-// Call this after any CRUD operation that may have added, removed, or renamed
-// a character file.
-func (r *rightPanelModel) markCastDirty() {
-	r.castStale = true
+// markWorldDirty signals that both the cast and location lists should be
+// reloaded on the next sync. Call after any CRUD operation that may have
+// added, removed, or renamed a character or location file.
+func (r *rightPanelModel) markWorldDirty() {
+	r.worldStale = true
 }
 
 // SyncToSelection updates panel content to match the binder's current selection.
@@ -57,35 +91,45 @@ func (r *rightPanelModel) markCastDirty() {
 // directory or empty selection.
 func (r *rightPanelModel) SyncToSelection(selectedFile string) {
 	charsDir := filepath.Clean(core.CharactersDir(r.root))
+	locsDir := filepath.Clean(core.LocationsDir(r.root))
 
 	if selectedFile != "" && isUnderDir(selectedFile, charsDir) {
 		c, err := core.LoadCharacter(selectedFile)
 		if err == nil {
-			r.char = c
-			r.content = rpContentChar
+			r.entity = entityFromCharacter(c)
+			r.content = rpContentEntity
 			return
 		}
-		// File is under characters/ but unreadable — show an error hint rather
-		// than silently falling back to the cast list, which would look like the
-		// character doesn't exist.
-		r.char = nil
 		r.errMsg = fmt.Sprintf("Could not read\n%s\n\nCheck permissions\nor YAML formatting.",
 			filepath.Base(selectedFile))
 		r.content = rpContentError
 		return
 	}
 
-	// Not a character file — show the cast list, reloading only when stale.
-	r.char = nil
-	if r.castStale || r.cast == nil {
-		chars, _ := core.ListCharacters(r.root)
-		r.cast = chars
-		r.castStale = false
+	if selectedFile != "" && isUnderDir(selectedFile, locsDir) {
+		l, err := core.LoadLocation(selectedFile)
+		if err == nil {
+			r.entity = entityFromLocation(l)
+			r.content = rpContentEntity
+			return
+		}
+		r.errMsg = fmt.Sprintf("Could not read\n%s\n\nCheck permissions\nor YAML formatting.",
+			filepath.Base(selectedFile))
+		r.content = rpContentError
+		return
 	}
-	if len(r.cast) == 0 {
+
+	// Not a character or location file — show the world index, reloading only
+	// when stale (i.e., after a CRUD operation or first display).
+	if r.worldStale || (r.cast == nil && r.locs == nil) {
+		r.cast, _ = core.ListCharacters(r.root)
+		r.locs, _ = core.ListLocations(r.root)
+		r.worldStale = false
+	}
+	if len(r.cast) == 0 && len(r.locs) == 0 {
 		r.content = rpContentEmpty
 	} else {
-		r.content = rpContentCast
+		r.content = rpContentWorld
 	}
 }
 
@@ -108,24 +152,21 @@ func (r rightPanelModel) view() string {
 	if len(lines) > visibleH {
 		lines = lines[:visibleH]
 	}
-
 	return style.Render(strings.Join(lines, "\n"))
 }
 
 // buildLines builds the panel's content as individual rendered lines.
 func (r rightPanelModel) buildLines(contentW int) []string {
-	// wrap is used only for multi-line prose (character detail); cast/empty/error
-	// views use direct Width renders which already word-wrap.
 	wrap := func(s string, style lipgloss.Style) []string {
 		return strings.Split(style.Width(contentW).Render(s), "\n")
 	}
 	div := RightPanelDivStyle.Render(strings.Repeat("─", contentW))
 
 	switch r.content {
-	case rpContentChar:
-		return r.buildCharLines(contentW, wrap, div)
-	case rpContentCast:
-		return r.buildCastLines(contentW, div)
+	case rpContentEntity:
+		return r.buildEntityLines(contentW, wrap, div)
+	case rpContentWorld:
+		return r.buildWorldLines(contentW, div)
 	case rpContentError:
 		return r.buildErrorLines(contentW, div)
 	default: // rpContentEmpty
@@ -133,30 +174,28 @@ func (r rightPanelModel) buildLines(contentW int) []string {
 	}
 }
 
-func (r rightPanelModel) buildCharLines(contentW int, wrap func(string, lipgloss.Style) []string, div string) []string {
-	c := r.char
-	if c == nil {
-		// Guard against zero-value struct; should not happen in normal use.
-		return r.buildEmptyLines(contentW, div)
-	}
+// buildEntityLines renders a character or location detail view using the
+// unified entityDetail struct, so both types share identical layout logic.
+func (r rightPanelModel) buildEntityLines(contentW int, wrap func(string, lipgloss.Style) []string, div string) []string {
+	e := r.entity
 	var lines []string
 
-	lines = append(lines, RightPanelHeaderStyle.Width(contentW).Render(c.DisplayName()))
-	if c.Meta.Role != "" {
-		lines = append(lines, RightPanelRoleStyle.Width(contentW).Render(c.Meta.Role))
+	lines = append(lines, RightPanelHeaderStyle.Width(contentW).Render(e.name))
+	if e.typeLabel != "" {
+		lines = append(lines, RightPanelRoleStyle.Width(contentW).Render(e.typeLabel))
 	}
 	lines = append(lines, div)
 
-	if c.Meta.Description != "" {
-		lines = append(lines, wrap(c.Meta.Description, RightPanelFieldStyle)...)
+	if e.description != "" {
+		lines = append(lines, wrap(e.description, RightPanelFieldStyle)...)
 		lines = append(lines, "")
 	}
-	if len(c.Meta.Tags) > 0 {
-		lines = append(lines, RightPanelHintStyle.Render("tags: "+strings.Join(c.Meta.Tags, ", ")))
+	if len(e.tags) > 0 {
+		lines = append(lines, RightPanelHintStyle.Render("tags: "+strings.Join(e.tags, ", ")))
 		lines = append(lines, "")
 	}
 
-	body := strings.TrimSpace(c.Body)
+	body := strings.TrimSpace(e.body)
 	if body != "" {
 		lines = append(lines, div)
 		lines = append(lines, RightPanelHintStyle.Render("notes"))
@@ -167,36 +206,53 @@ func (r rightPanelModel) buildCharLines(contentW int, wrap func(string, lipgloss
 	return lines
 }
 
-func (r rightPanelModel) buildCastLines(contentW int, div string) []string {
+// buildWorldLines renders the combined characters + locations index shown when
+// no entity file is selected in the binder.
+func (r rightPanelModel) buildWorldLines(contentW int, div string) []string {
 	var lines []string
-	lines = append(lines, RightPanelHeaderStyle.Width(contentW).Render("Characters"))
+	lines = append(lines, RightPanelHeaderStyle.Width(contentW).Render("World"))
 	lines = append(lines, div)
-	for _, c := range r.cast {
-		lines = append(lines, RightPanelFieldStyle.Width(contentW).Render(c.DisplayName()))
-		if c.Meta.Role != "" {
-			lines = append(lines, RightPanelRoleStyle.Width(contentW).Render("  "+c.Meta.Role))
+
+	if len(r.cast) > 0 {
+		lines = append(lines, RightPanelHintStyle.Render("characters"))
+		for _, c := range r.cast {
+			lines = append(lines, RightPanelFieldStyle.Width(contentW).Render(c.DisplayName()))
+			if c.Meta.Role != "" {
+				lines = append(lines, RightPanelRoleStyle.Width(contentW).Render("  "+c.Meta.Role))
+			}
 		}
+		lines = append(lines, "")
 	}
-	lines = append(lines, "")
-	lines = append(lines, RightPanelHintStyle.Width(contentW).Render("select a character\nin the binder"))
+
+	if len(r.locs) > 0 {
+		lines = append(lines, RightPanelHintStyle.Render("locations"))
+		for _, l := range r.locs {
+			lines = append(lines, RightPanelFieldStyle.Width(contentW).Render(l.DisplayName()))
+			if l.Meta.Type != "" {
+				lines = append(lines, RightPanelRoleStyle.Width(contentW).Render("  "+l.Meta.Type))
+			}
+		}
+		lines = append(lines, "")
+	}
+
+	lines = append(lines, RightPanelHintStyle.Width(contentW).Render("select an entity\nin the binder"))
 	return lines
 }
 
 func (r rightPanelModel) buildEmptyLines(contentW int, div string) []string {
 	var lines []string
-	lines = append(lines, RightPanelHeaderStyle.Width(contentW).Render("Characters"))
+	lines = append(lines, RightPanelHeaderStyle.Width(contentW).Render("World"))
 	lines = append(lines, div)
 	lines = append(lines, "")
-	lines = append(lines, RightPanelHintStyle.Width(contentW).Render("No characters yet."))
+	lines = append(lines, RightPanelHintStyle.Width(contentW).Render("No characters or\nlocations yet."))
 	lines = append(lines, "")
-	// Two-step hint: create the folder first (N), then add files (n).
-	lines = append(lines, RightPanelHintStyle.Width(contentW).Render("Press N to create a\ncharacters/ folder,\nthen n to add files."))
+	lines = append(lines, RightPanelHintStyle.Width(contentW).Render("Press N to create\ncharacters/ or\nlocations/ folders,\nthen n to add files."))
 	return lines
 }
 
 func (r rightPanelModel) buildErrorLines(contentW int, div string) []string {
 	var lines []string
-	lines = append(lines, RightPanelHeaderStyle.Width(contentW).Render("Characters"))
+	lines = append(lines, RightPanelHeaderStyle.Width(contentW).Render("World"))
 	lines = append(lines, div)
 	lines = append(lines, "")
 	lines = append(lines, RightPanelHintStyle.Width(contentW).Render(r.errMsg))
@@ -210,4 +266,3 @@ func isUnderDir(path, dir string) bool {
 	d := filepath.Clean(dir)
 	return p == d || strings.HasPrefix(p, d+string(filepath.Separator))
 }
-

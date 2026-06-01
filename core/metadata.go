@@ -58,6 +58,22 @@ func (m Metadata) IsEmpty() bool {
 		m.Modified == nil
 }
 
+// parseFrontmatterInto splits raw content using splitFrontmatter and
+// unmarshals the YAML block into dst (which must be a pointer to a struct
+// with yaml struct tags). Returns the prose body and ok=true on success;
+// returns raw and ok=false on any parse or unmarshal failure, preserving
+// the forgiving-load invariant shared by all frontmatter types.
+func parseFrontmatterInto(raw string, dst interface{}) (body string, ok bool) {
+	yamlBlock, b, found := splitFrontmatter(raw)
+	if !found {
+		return raw, false
+	}
+	if err := yaml.Unmarshal([]byte(yamlBlock), dst); err != nil {
+		return raw, false
+	}
+	return b, true
+}
+
 // splitFrontmatter splits raw content at the YAML frontmatter delimiters. It
 // returns the YAML block (without the --- lines), the prose body, and ok=true.
 // When raw has no valid frontmatter block (no leading delimiter, no closing

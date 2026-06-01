@@ -5,13 +5,11 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-
-	"gopkg.in/yaml.v3"
 )
 
 // CharacterMeta is the YAML frontmatter for a character file. Fields are
-// deliberately minimal for Phase 8; richer data (relationships, arc notes,
-// voice) is added in a later phase.
+// deliberately minimal here; richer data (arc notes, relationships, voice)
+// is added in a later phase.
 type CharacterMeta struct {
 	Name        string   `yaml:"name,omitempty"`
 	Role        string   `yaml:"role,omitempty"`
@@ -47,13 +45,17 @@ func LoadCharacter(path string) (*Character, error) {
 	if err != nil {
 		return nil, err
 	}
-	meta, body := parseCharacterFrontmatter(string(data))
+	var meta CharacterMeta
+	body, ok := parseFrontmatterInto(string(data), &meta)
+	if !ok {
+		body = string(data)
+	}
 	return &Character{Path: path, Meta: meta, Body: body}, nil
 }
 
 // Save writes the character back to its path.
 func (c *Character) Save() error {
-	out, err := serializeCharacter(c.Meta, c.Body)
+	out, err := serializeFrontmatter(c.Meta, c.Body)
 	if err != nil {
 		return err
 	}
@@ -64,21 +66,13 @@ func (c *Character) Save() error {
 // them sorted by display name. A missing characters/ directory returns nil
 // without error — it simply means no characters exist yet.
 func ListCharacters(root string) ([]Character, error) {
-	dir := filepath.Join(root, "characters")
-	entries, err := os.ReadDir(dir)
-	if os.IsNotExist(err) {
-		return nil, nil
-	}
+	paths, err := listEntityFiles(CharactersDir(root))
 	if err != nil {
 		return nil, err
 	}
 	var chars []Character
-	for _, e := range entries {
-		name := e.Name()
-		if e.IsDir() || filepath.Ext(name) != ".md" || (len(name) > 0 && name[0] == '.') {
-			continue
-		}
-		c, err := LoadCharacter(filepath.Join(dir, name))
+	for _, p := range paths {
+		c, err := LoadCharacter(p)
 		if err != nil {
 			continue // best-effort: skip unreadable files
 		}
@@ -95,20 +89,24 @@ func CharactersDir(root string) string {
 	return filepath.Join(root, "characters")
 }
 
-// parseCharacterFrontmatter uses the shared splitFrontmatter splitter so the
-// CRLF-aware delimiter scanning lives in exactly one place.
-func parseCharacterFrontmatter(raw string) (CharacterMeta, string) {
-	yamlBlock, body, ok := splitFrontmatter(raw)
-	if !ok {
-		return CharacterMeta{}, raw
+// listEntityFiles returns the paths of all non-hidden .md files directly inside
+// dir. A missing directory returns nil without error. Used by ListCharacters,
+// ListLocations, and any future world-building entity list.
+func listEntityFiles(dir string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return nil, nil
 	}
-	var meta CharacterMeta
-	if err := yaml.Unmarshal([]byte(yamlBlock), &meta); err != nil {
-		return CharacterMeta{}, raw
+	if err != nil {
+		return nil, err
 	}
-	return meta, body
-}
-
-func serializeCharacter(meta CharacterMeta, body string) (string, error) {
-	return serializeFrontmatter(meta, body)
+	var paths []string
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || filepath.Ext(name) != ".md" || (len(name) > 0 && name[0] == '.') {
+			continue
+		}
+		paths = append(paths, filepath.Join(dir, name))
+	}
+	return paths, nil
 }
