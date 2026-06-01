@@ -1,145 +1,172 @@
 # ✧ chisel — design document ✧
 
-> **Status (May 2026):** This document is the north-star vision for chisel.  
-> Features shipped through Phase 5 are marked **[shipped]** inline below.  
+> **Status (June 2026):** This document is the north-star vision for chisel.
+> Features shipped through Phase 8 are marked **[shipped]** inline below.
 > The original v1.2 full implementation lives on `archive/chisel-full` (reference only).
 
-**Shipped through Phase 5:**
-- Binder + editor TUI with stable layout ✓
+**Shipped through Phase 8:**
+- Stabilized TUI layout (border-aware sizing, no overflow) ✓
 - `core/` package with zero charmbracelet imports (GUI-ready seam) ✓
-- YAML frontmatter metadata per scene ✓
-- Git-backed revision history (Ctrl+H) ✓
-- Corkboard (F2) and outliner (F3) views ✓
-- Compile / export to manuscript.md, optional .docx via pandoc (Ctrl+E) ✓
+- YAML frontmatter metadata per scene (status glyphs, word count, timestamps) ✓
+- Git-backed revision history — auto-snapshot, browse/diff/restore (Ctrl+H) ✓
+- Corkboard (F2) and outliner (F3) structural views ✓
+- Compile/export to manuscript.md + optional pandoc .docx (Ctrl+E) ✓
+- Binder-side CRUD — create/rename/delete files and folders (n/N/r/d) ✓
+- `chisel init` subcommand — 3 templates, interactive + non-interactive ✓
+- Right panel + character viewer — passive binder-driven inspector (F5) ✓
+- Character YAML frontmatter (name, role, description, tags) ✓
 
-**Pending:** LLM assist, character sheets, themes/goals, GUI alongside TUI.
+**Pending:** LLM assist, scene notes, richer character sheets, themes/goals, GUI.
 
 ## architecture
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                    Go TUI (bubbletea)                    │
-│  ┌──────────┐  ┌──────────┐  ┌──────────────────────┐  │
-│  │  binder  │  │  editor  │  │     llm panel        │  │
-│  │ (tree)   │  │ (markdown│  │ (responses, research, │  │
-│  │          │  │  text)   │  │  questions, analysis) │  │
-│  └──────────┘  └──────────┘  └──────────────────────┘  │
-│                         │                               │
-│            NDJSON over stdin/stdout (subprocess)        │
-│                         │                               │
-│  ┌──────────────────────────────────────────────────┐   │
-│  │              Python backend (chisel.py)           │   │
-│  │  ┌────────┐  ┌──────────┐  ┌────────────────┐   │   │
-│  │  │  llm   │  │ research │  │   analysis     │   │   │
-│  │  │ calls  │  │ gather   │  │   (mirror)     │   │   │
-│  │  └────────┘  └──────────┘  └────────────────┘   │   │
-│  └──────────────────────────────────────────────────┘   │
-│                         │                               │
-│              OpenAI-compatible HTTP API                 │
-│                         │                               │
-│  ┌──────────┐  ┌──────────┐  ┌────────────────────┐    │
-│  │ LM Studio│  │llama.cpp │  │ cloud (openai/     │    │
-│  │ (local)  │  │ (local)  │  │ anthropic)         │    │
-│  └──────────┘  └──────────┘  └────────────────────┘    │
-└─────────────────────────────────────────────────────────┘
-```
+The architecture has evolved through eight phases. What was originally designed as a Go TUI + Python LLM backend is now a pure-Go TUI with a strict `core`/`tui` split. The LLM layer (pending) will slot back in as a `core` package, keeping the same boundary.
 
-**Go TUI** handles everything the user touches: the binder tree, the text editor, the LLM panel, keyboard shortcuts, pane layout switching. **Python backend** handles everything the LLM touches: model calls, image encoding (if vision features arrive later), research gathering, stylistic analysis. They communicate via NDJSON over stdin/stdout — same pattern as the screenshot cataloger. This split means the TUI stays responsive during LLM calls and the Python side can be swapped out or replaced without touching the UI.
+```
+┌──────────────────────────────────────────────────────────┐
+│                   chisel binary (Go)                      │
+│                                                           │
+│  ┌───────────────────────────────────────────────────┐   │
+│  │              tui/ (Bubble Tea + Lip Gloss)         │   │
+│  │  ┌────────┐ ┌────────┐ ┌───────────────────┐      │   │
+│  │  │ binder │ │ editor │ │  right panel      │      │   │
+│  │  │ (tree) │ │(md txt)│ │  (character view) │      │   │
+│  │  └────────┘ └────────┘ └───────────────────┘      │   │
+│  │  ┌──────────────────────────────────────────┐     │   │
+│  │  │  structural views                        │     │   │
+│  │  │  ┌──────────┐ ┌──────────┐               │     │   │
+│  │  │  │corkboard │ │ outliner │               │     │   │
+│  │  │  │(F2)      │ │(F3)      │               │     │   │
+│  │  │  └──────────┘ └──────────┘               │     │   │
+│  │  └──────────────────────────────────────────┘     │   │
+│  │                         │                          │   │
+│  │                    core/ types                     │   │
+│  │  ┌──────────┬──────────┬──────────┬──────────┐   │   │
+│  │  │ project  │  scene   │ metadata │ revision │   │   │
+│  │  │ outline  │  export  │  crud    │ scaffold │   │   │
+│  │  │          │          │          │ character│   │   │
+│  │  └──────────┴──────────┴──────────┴──────────┘   │   │
+│  └───────────────────────────────────────────────────┘   │
+│                                                           │
+│  ┌───────────────────────────────────────────────────┐   │
+│  │  pending: llm/ (OpenAI-compatible HTTP API)        │   │
+│  │  ┌────────┐ ┌──────────┐ ┌────────────────┐      │   │
+│  │  │  llm   │ │ research │ │   analysis     │      │   │
+│  │  │ calls  │ │ gather   │ │   (mirror)     │      │   │
+│  │  └────────┘ └──────────┘ └────────────────┘      │   │
+│  └───────────────────────────────────────────────────┘   │
+└──────────────────────────────────────────────────────────┘
+```
 
 ## data model
 
-### project structure on disk
+### [shipped] project structure on disk
 
 ```
-my-project/
-├── manifest.jsonl        # scene metadata, one JSON object per line
-├── config.json           # project-level settings
+my-novel/
+├── README.md
 ├── scenes/               # your writing — one .md file per scene
-│   ├── ch01-arrival.md
-│   ├── ch02-the-garden.md
-│   └── notes_2026-05.md
-├── research/             # LLM-gathered notes tagged to scenes
-│   ├── roman-architecture.md
-│   └── color-symbolism.md
-└── exports/              # compiled output (future)
-    └── manuscript.md
+│   ├── ch01-opening.md
+│   ├── ch02-rising-action.md
+│   └── notes.md
+├── characters/           # character profiles — .md with YAML frontmatter
+│   ├── protagonist.md
+│   └── antagonist.md
+├── locations/            # location descriptions (scaffolded, manual editing)
+├── exports/              # compiled output
+│   ├── manuscript.md
+│   └── manuscript.docx   (if pandoc installed)
+└── .git/                 # auto-created by go-git on first save
 ```
 
-### manifest format (JSONL)
+No `manifest.jsonl`. No `config.json`. No sidecar files. The filesystem and YAML frontmatter are the data model.
 
-Each line is a self-contained JSON object. The `id` is the filename stem. The manifest is append-only during normal use; reorder events rewrite the entire file. Same pattern as the screenshot cataloger.
+### [shipped] scene format
 
-```json
-{
-  "id": "ch01-arrival",
-  "file": "scenes/ch01-arrival.md",
-  "title": "Chapter 1 — Arrival",
-  "status": "revised",
-  "word_count": 1247,
-  "pov": "first",
-  "draft_order": 1,
-  "tags": ["opening", "establishing"],
-  "created": "2026-05-24T14:00:00",
-  "modified": "2026-05-24T22:00:00",
-  "research_refs": ["roman-architecture"],
-  "notes": "needs a tighter ending — the last paragraph drifts"
-}
+Each scene is a `.md` file with optional YAML frontmatter:
+
+```markdown
+---
+title: Chapter One — Arrival
+status: revised
+synopsis: She steps onto the platform alone.
+tags:
+  - opening
+  - rain
+draft_order: 1
+word_target: 2000
+pov: first
+word_count: 1247
+created: 2026-05-31T09:50:24-04:00
+modified: 2026-05-31T09:50:24-04:00
+---
+# Chapter One
+
+The train pulled in at dusk.
 ```
 
-### research notes
+Files without frontmatter are plain markdown and open/save cleanly. The `word_count`, `created`, and `modified` fields are auto-managed — the user never edits them. Status glyphs appear in the binder: ○ draft, ◐ revised, ● done.
 
-Research files live in `research/` and are plain markdown. The LLM populates them on request. **By default, research notes are auto-tagged to the current scene** — the scene's `research_refs` array updates automatically. A toggle in settings (`research.auto_tag`) disables this, leaving new notes untagged until the user assigns them manually. The research panel shows all notes tagged to the current scene.
+### [shipped] character format
 
-## pane configurations
+Character profiles in `characters/` follow the same pattern with a different frontmatter schema:
 
-The user switches between three layouts with a single keystroke. No window management, no mouse. Each layout is a *mode*, not a fixed split — the TUI reflows on toggle.
+```markdown
+---
+name: Elara Voss
+role: Protagonist
+description: A cartographer who maps the unmappable. Haunted by the cities she's erased.
+tags:
+  - pov
+  - haunted
+---
+## Background
 
-### mode 1: editor only (`ctrl+1`)
+Elara grew up in the borderlands between Ha'ren and the outer rings...
 ```
-┌────────────────────────────────────────────────┐
-│                  editor                        │
-│                                                │
-│        (full-screen writing)                   │
-│                                                │
-└────────────────────────────────────────────────┘
-```
-For focused drafting. Nothing else on screen.
 
-### mode 2: binder + editor (`ctrl+2`)
-```
-┌──────────────┬─────────────────────────────────┐
-│   binder     │           editor                │
-│   (tree)     │                                 │
-│              │      (writing pane)             │
-│ ▸ ch01       │                                 │
-│   ▸ arrival  │                                 │
-│   ▸ garden   │                                 │
-│ ▸ ch02       │                                 │
-│   ▸ escape   │                                 │
-│ ▸ notes      │                                 │
-└──────────────┴─────────────────────────────────┘
-```
-For navigating between scenes while writing.
+### [pending] manifest format (v1.2 reference)
 
-### mode 3: binder + editor + llm (`ctrl+3`)
-```
-┌──────────┬──────────────┬──────────────────────┐
-│  binder  │   editor     │     llm panel        │
-│  (tree)  │              │                      │
-│          │  (writing)   │  rewrite suggestions  │
-│ ▸ ch01   │              │  research notes       │
-│   ▸ arr… │              │  analysis output      │
-│   ▸ gar… │              │  ask responses        │
-│ ▸ ch02   │              │                      │
-└──────────┴──────────────┴──────────────────────┘
-```
-For working with the LLM alongside the text.
+The original v1.2 design used a JSONL manifest. This has been superseded by YAML frontmatter in the files themselves. The manifest approach is preserved here as design history — it was the right call for the v1.2 architecture with a Python backend, but frontmatter-in-file eliminates the sync problem entirely.
 
-## llm integration
+### [pending] research notes
+
+The original design included a `research/` directory with auto-tagged LLM-gathered notes. When the LLM layer returns, this pattern will be re-evaluated against the frontmatter-in-file approach.
+
+## [shipped] revision history
+
+Chisel tracks every save automatically. Every Ctrl+S creates a git snapshot via `go-git` (pure Go, no system git binary). The user browses history with Ctrl+H: a scrollable list of snapshots with timestamps, colored unified diffs, and one-key restore.
+
+### backend
+
+**Git** (shipped) — `go-git/v5` handles everything in-process. The `.git` directory lives inside the project root, initialized lazily on first save. Empty commits (save with no changes) are silently discarded.
+
+**jj** (pending) — the `RevisionBackend` interface was designed for this swap: `Snapshot`, `Log`, `Diff`, `Restore`. A `JjBackend` implementing the same interface can slot in without changing any TUI code.
+
+## [shipped] structural views
+
+### corkboard (F2)
+
+Scrivener's corkboard: a scrollable grid of index cards for the scenes in the current binder folder. Each card shows title, status, word-count progress, and synopsis excerpt. Cards are fixed-width (26 chars) so the grid aligns regardless of content. Navigation with arrow keys; Enter opens the selected scene.
+
+### outliner (F3)
+
+A collapsible project-wide outline. Every file and folder appears as a tree row with indentation. Scene rows carry a right-aligned column with status glyph and word-count (or word-count/target). Folders expand/collapse independently of the binder. Word-count targets that have been met render in green.
+
+### right panel (F5)
+
+A passive, binder-driven inspector pane. No cursor, no focus, no key handling — it reflects whatever the binder has selected. Three modes:
+- **Character detail:** when a file in `characters/` is selected, shows name, role, description, tags, and body notes
+- **Cast list:** when anything else is selected, lists all characters with roles
+- **Empty hint:** when no `characters/` directory exists
+
+Toggled with F5. The layout rebalances to three panes (binder shrinks, editor stays, right panel appears on the right).
+
+## [pending] LLM integration
 
 ### provider abstraction
 
-The Python backend talks to any OpenAI-compatible endpoint. Configuration lives in `config.json`:
+The LLM layer will talk to any OpenAI-compatible endpoint. Configuration will live in per-scene or per-project settings (exact format TBD — likely YAML frontmatter on a project-level config or environment variables). The design from v1.2 with separate `llm` and `mirror` model slots is still the target:
 
 ```json
 {
@@ -158,71 +185,68 @@ The Python backend talks to any OpenAI-compatible endpoint. Configuration lives 
 }
 ```
 
-Two model slots: `llm` for general-purpose tasks (rewrite, generate, research, ask), `mirror` for stylistic analysis — your fine-tuned model that surfaces patterns in your writing. They can point at the same endpoint with different model names, or at entirely different servers.
+Two model slots: `llm` for general-purpose tasks (rewrite, generate, research, ask), `mirror` for stylistic analysis — a fine-tuned model that surfaces patterns in your writing.
 
 ### operations
 
-Each LLM operation is a typed request from the TUI to the Python backend:
+Each LLM operation is a typed request, triggered by keystroke:
 
-| operation | what it does | uses mirror? |
-|-----------|-------------|:---:|
-| `rewrite` | suggest alternatives for selected text | no |
-| `generate` | continue from cursor with optional guidance | no |
-| `summarize` | summarize selection, scene, or chapter | no |
-| `ask` | answer a question about the text or research a topic | no |
-| `analyze` | surface tics, rhythm issues, overused words | yes |
-| `research` | gather notes on a topic and tag to current scene | no |
+| operation | keystroke | uses mirror? | description |
+|-----------|-----------|:---:|-------------|
+| `rewrite` | Ctrl+R | no | suggest alternatives for selected text |
+| `generate` | Ctrl+G | no | continue from cursor |
+| `summarize` | Ctrl+Shift+S | no | summarize selection or scene |
+| `ask` | Ctrl+K | no | answer question or research topic |
+| `analyze` | Ctrl+A | yes | surface tics, rhythm, overused words |
+| `research` | Ctrl+F5 | no | gather notes and tag to current scene |
 
 ### interaction pattern
 
-Operations are triggered by keystrokes, not a chat interface. The user selects text (or doesn't — some operations work on the whole scene), hits a key, and the response appears in the LLM panel. No back-and-forth conversation. The panel is a *viewer*, not a chatbot.
+Operations are triggered by keystrokes, not a chat interface. The user selects text (or doesn't — some operations work on the whole scene), hits a key, and the response appears in a panel. No back-and-forth conversation.
 
-```
-Keystroke map:
-  Ctrl+R     → rewrite selected text
-  Ctrl+G     → generate from cursor
-  Ctrl+Shift+S → summarize selection/scene
-  Ctrl+K     → ask a question (prompt bar opens at bottom)
-  Ctrl+A     → analyze style of current scene (mirror)
-  Ctrl+F5    → research topic (prompt bar, results in research/)
-```
+## [shipped] editor
 
-## editor
+The editor is modeless. Standard shortcuts: Ctrl+S saves (+ snapshots), Ctrl+F finds, Ctrl+Z undoes. No vim mode. The goal is that someone who hasn't used a CLI editor in years can sit down and write.
 
-The editor is modeless by default. Standard shortcuts (Ctrl+S saves, Ctrl+F finds, Ctrl+Z undoes). Vim bindings as an opt-in toggle in settings, not the default. The goal is that someone who hasn't used a CLI editor in years can sit down and write.
+Scenes open from the binder (Enter) or from structural views (Enter in corkboard/outliner). The editor preserves unsaved changes when switching scenes — a modified indicator (●) appears in the status bar.
 
-### file format
+## [shipped] binder CRUD
 
-Plain markdown. No frontmatter required. The manifest holds metadata. A scene file might look like:
+Create, rename, and delete files and folders directly in the binder:
 
-```markdown
-# Chapter 1 — Arrival
+- `n` — new scene (prompt for name, creates `<name>.md` in current folder)
+- `N` — new folder
+- `r` — rename selected (auto-preserves `.md` extension, pre-fills current name)
+- `d` — delete selected (y=confirm, recursive for folders)
 
-The train pulled in at dusk. Rain had been falling for three hours
-and showed no sign of stopping.
+These keys only fire when the binder is focused. When the editor has focus, they insert literal characters. The prompt bar occupies the status-bar row during CRUD and is dismissed on Enter (confirm) or Esc (cancel).
 
-She stepped onto the platform alone.
-```
+## [shipped] project scaffolding
 
-If the file has a `# Title` on the first line, the editor can pull the title from there as a fallback if the manifest entry is missing. But the manifest is the source of truth.
+`chisel init` scaffolds new projects from three templates:
+
+- **minimal** — README.md only
+- **novel** — `scenes/`, `characters/`, `locations/` with two seeded chapters (draft_order 1 and 2, status: draft)
+- **short-stories** — single `story-01.md`
+
+Interactive mode prompts for name and template choice. Non-interactive: `--template <tmpl>` + optional positional directory + `--no-open`.
 
 ## decisions
 
-- **One scene per file.** Each `.md` file in `scenes/` is one scene. No delimiters, no multi-scene files. The binder tree provides organization; the filesystem stays simple.
-- **Research auto-tags to current scene by default.** A toggle in settings disables this.
-- **Built-in revision history.** Every save is tracked. See below.
-- **Export is a v1 feature.** Concatenating scenes in draft order into `exports/manuscript.md` is essential for reading the whole work.
+- **One scene per file.** Each `.md` file is one scene. No delimiters, no multi-scene files.
+- **YAML frontmatter over JSONL manifest.** Frontmatter lives in the file itself — no sync problem, no desync possible. The v1.2 manifest approach was correct for its architecture but wrong for a local-first TUI where the filesystem is the API.
+- **`core` stays charmbracelet-free.** This is the GUI-ready seam. Everything that touches the terminal lives in `tui/`. A Wails or Fyne frontend can import `core` directly.
+- **Passive right panel.** The character inspector has no cursor and handles no keys. It's a pure view. The binder drives it. This keeps the mode count low and avoids focus-management complexity.
+- **Binder CRUD is synchronous.** The old async `newSceneMsg` flow was replaced with a modal prompt bar. The user types a name, presses Enter, and the operation completes immediately.
+- **`RevisionBackend` is trigger-agnostic.** The backend knows how to snapshot, log, diff, and restore. It does not know *when* to do those things. The caller (Ctrl+S handler, autosave timer, structural edit) decides timing.
+- **Export is a core operation.** `Project.Export()` lives in `core`, not `tui`. A GUI or CLI can compile a manuscript without running the TUI.
 
-## revision history
+## pane layout evolution
 
-Chisel tracks every save automatically. No manual commits, no staging area — every Ctrl+S creates a snapshot. The user browses history from within the editor: jump back to any saved version of the current scene, compare side-by-side, restore a passage.
+The original design had three pane configurations (editor-only, binder+editor, binder+editor+LLM) toggled with Ctrl+1/2/3. The current implementation uses a different approach:
 
-### backend options
+- **Main view:** binder + editor (always) + optional right panel (F5)
+- **Structural views:** corkboard (F2) or outliner (F3) replace the main view full-width
+- **Overlay views:** history browser (Ctrl+H) overlays the main view full-width
 
-Two candidates for the storage layer:
-
-**git** — ubiquitous, already installed on most systems. The tool initializes a `.git` inside the project directory on creation. Every save triggers a commit with a structured message (`scene: ch01-arrival — 1,247 words`). History browsing reads from `git log` and `git diff`. The downside: git's staging area is conceptually wrong for a writing tool where "save = snapshot" should be a single atomic operation.
-
-**jj (Jujutsu)** — Google's git-compatible VCS. No staging area, automatic commits on every change, rebase-first workflow. A save in chisel maps directly to `jj new` + `jj describe`. History browsing is cleaner because jj's log shows all snapshots as first-class commits, not a messy reflog. The downside: jj is newer and not yet universally installed.
-
-**Recommendation:** target git for v1 (zero dependency friction), but keep the revision API abstract so jj can slot in later as a configurable backend. The user-facing behavior is identical either way — Ctrl+S creates a snapshot, the history browser shows a timeline.
+This is simpler than the original 3-mode design and avoids the complexity of resizing three panes with independent content types. When the LLM panel returns, it can slot in as either a structural view or a third pane in the main layout — the `viewMode` system already supports both patterns.

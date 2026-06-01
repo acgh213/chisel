@@ -58,23 +58,18 @@ func (m Metadata) IsEmpty() bool {
 		m.Modified == nil
 }
 
-// parseFrontmatter splits raw file content into metadata and the prose body.
-//
-// It is deliberately forgiving: a file with no leading frontmatter block — or
-// one whose YAML fails to parse — returns zero metadata and the *entire* content
-// as the body. A bad header never fails the load; the scene just opens as plain
-// prose. The body is preserved byte-for-byte (including its leading/trailing
-// newlines) so editing round-trips cleanly.
-func parseFrontmatter(raw string) (Metadata, string) {
-	// Must open with a delimiter line.
+// splitFrontmatter splits raw content at the YAML frontmatter delimiters. It
+// returns the YAML block (without the --- lines), the prose body, and ok=true.
+// When raw has no valid frontmatter block (no leading delimiter, no closing
+// delimiter, or CRLF/LF issues) it returns "", raw, false so callers can degrade
+// gracefully rather than duplicating this CRLF-aware scanning.
+func splitFrontmatter(raw string) (yamlBlock, body string, ok bool) {
 	if !strings.HasPrefix(raw, frontmatterDelim+"\n") && !strings.HasPrefix(raw, frontmatterDelim+"\r\n") {
-		return Metadata{}, raw
+		return "", raw, false
 	}
-
-	// Keep newlines on each line so the body can be reassembled exactly.
+	// SplitAfter keeps the newline on each element so the body can be
+	// reassembled byte-for-byte.
 	lines := strings.SplitAfter(raw, "\n")
-
-	// Find the closing delimiter line (after the opening one).
 	closeIdx := -1
 	for i := 1; i < len(lines); i++ {
 		if strings.TrimRight(lines[i], "\r\n") == frontmatterDelim {
@@ -83,29 +78,44 @@ func parseFrontmatter(raw string) (Metadata, string) {
 		}
 	}
 	if closeIdx == -1 {
-		// Unterminated block — treat the whole file as body.
+		return "", raw, false
+	}
+	return strings.Join(lines[1:closeIdx], ""), strings.Join(lines[closeIdx+1:], ""), true
+}
+
+// parseFrontmatter splits raw file content into metadata and the prose body.
+//
+// It is deliberately forgiving: a file with no leading frontmatter block — or
+// one whose YAML fails to parse — returns zero metadata and the *entire* content
+// as the body. A bad header never fails the load; the scene just opens as plain
+// prose. The body is preserved byte-for-byte (including its leading/trailing
+// newlines) so editing round-trips cleanly.
+func parseFrontmatter(raw string) (Metadata, string) {
+	yamlBlock, body, ok := splitFrontmatter(raw)
+	if !ok {
 		return Metadata{}, raw
 	}
-
-	yamlBlock := strings.Join(lines[1:closeIdx], "")
-	body := strings.Join(lines[closeIdx+1:], "")
-
 	var meta Metadata
 	if err := yaml.Unmarshal([]byte(yamlBlock), &meta); err != nil {
-		// Malformed frontmatter — degrade to plain body rather than erroring.
 		return Metadata{}, raw
 	}
 	return meta, body
 }
 
-// serializeScene renders metadata + body into the on-disk representation. When
-// the metadata is empty it returns just the body (no frontmatter), so plain
-// files never sprout an empty header.
-func serializeScene(meta Metadata, body string) (string, error) {
+// emptyChecker is satisfied by any metadata type that can report whether it
+// carries no information. Used by serializeFrontmatter to decide whether to
+// emit a frontmatter block.
+type emptyChecker interface {
+	IsEmpty() bool
+}
+
+// serializeFrontmatter is the single serialization path for all frontmatter
+// types (scene metadata, character metadata, …). When meta.IsEmpty() it
+// returns just the body so plain files never sprout an empty header.
+func serializeFrontmatter(meta emptyChecker, body string) (string, error) {
 	if meta.IsEmpty() {
 		return body, nil
 	}
-
 	var buf bytes.Buffer
 	enc := yaml.NewEncoder(&buf)
 	enc.SetIndent(2)
@@ -115,8 +125,12 @@ func serializeScene(meta Metadata, body string) (string, error) {
 	if err := enc.Close(); err != nil {
 		return "", err
 	}
-
 	return frontmatterDelim + "\n" + buf.String() + frontmatterDelim + "\n" + body, nil
+}
+
+// serializeScene renders scene metadata + body into the on-disk representation.
+func serializeScene(meta Metadata, body string) (string, error) {
+	return serializeFrontmatter(meta, body)
 }
 
 // readMetadata reads only the metadata for a scene file, best-effort. Errors

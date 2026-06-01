@@ -84,6 +84,31 @@ var (
 	MetTargetStyle = lipgloss.NewStyle().Foreground(ColorGreen)
 )
 
+// Right panel styles (Phase 8).
+var (
+	RightPanelStyle = lipgloss.NewStyle().
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderForeground(ColorBorder).
+		Padding(0, 1)
+
+	RightPanelHeaderStyle = lipgloss.NewStyle().
+				Foreground(ColorAccent).
+				Bold(true)
+
+	RightPanelRoleStyle = lipgloss.NewStyle().
+				Foreground(ColorMuted)
+
+	RightPanelFieldStyle = lipgloss.NewStyle().
+				Foreground(ColorFg)
+
+	RightPanelHintStyle = lipgloss.NewStyle().
+				Foreground(ColorDim).
+				Italic(true)
+
+	RightPanelDivStyle = lipgloss.NewStyle().
+				Foreground(ColorBorder)
+)
+
 // PromptBarStyle is the inline text-input bar that replaces the status bar
 // during binder CRUD operations (new file/folder, rename, delete confirm).
 var PromptBarStyle = lipgloss.NewStyle().

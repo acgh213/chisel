@@ -36,37 +36,73 @@ const (
 // editor starts giving up columns. Keeps the tree readable on small terminals.
 const minBinderWidth = 20
 
+// minRightPanelWidth is the narrowest the right panel may be rendered.
+const minRightPanelWidth = 28
+
 // layoutSizes holds the OUTER box dimensions (including each pane's border)
-// for the binder and editor, plus the shared pane height.
+// for the binder, editor, and optional right panel, plus the shared pane height.
 type layoutSizes struct {
-	binderW int
-	editorW int
-	paneH   int
+	binderW      int
+	editorW      int
+	rightPanelW  int // 0 when the right panel is not shown
+	paneH        int
 }
 
-// computeLayout splits a terminal of the given size into binder/editor pane
-// dimensions. It is pure (no model state) so it can be unit-tested without a
-// running terminal. Widths are OUTER box sizes and sum to width when the
-// terminal is wide enough; one row is reserved for the status bar. Every value
-// is floored at 1 so a tiny terminal can never produce a zero/negative box
-// (which is what makes lipgloss/textarea misbehave).
-func computeLayout(width, height int) layoutSizes {
+// computeLayout splits a terminal of the given size into pane dimensions. It
+// is pure (no model state) so it can be unit-tested without a running terminal.
+// When showRight is false, the two-pane split (binder+editor) is used and
+// rightPanelW is 0. When showRight is true, a three-pane split is computed.
+// All widths are OUTER box sizes; they sum to width for terminals wide enough
+// to satisfy the minimums. Every dimension is floored at 1 so a tiny terminal
+// can never produce a zero/negative box.
+func computeLayout(width, height int, showRight bool) layoutSizes {
 	paneH := height - 1
 	if paneH < 1 {
 		paneH = 1
 	}
 
-	binderW := width / 3
+	if !showRight {
+		// Two-pane: binder | editor.
+		binderW := width / 3
+		if binderW < minBinderWidth {
+			binderW = minBinderWidth
+		}
+		editorW := width - binderW
+		if editorW < 1 {
+			binderW = width - 1
+			editorW = 1
+		}
+		if binderW < 1 {
+			binderW = 1
+		}
+		if editorW < 1 {
+			editorW = 1
+		}
+		return layoutSizes{binderW: binderW, editorW: editorW, paneH: paneH}
+	}
+
+	// Three-pane: binder | editor | right panel.
+	binderW := width / 5
 	if binderW < minBinderWidth {
 		binderW = minBinderWidth
 	}
-	editorW := width - binderW
+	rightW := width / 4
+	if rightW < minRightPanelWidth {
+		rightW = minRightPanelWidth
+	}
+	editorW := width - binderW - rightW
 
-	// When the terminal is too narrow for the preferred split, the editor
-	// takes priority and the binder shrinks to whatever is left.
 	if editorW < 1 {
-		binderW = width - 1
+		// Narrow terminal: shrink right panel first, then binder.
 		editorW = 1
+		rightW = width - binderW - editorW
+		if rightW < 1 {
+			rightW = 1
+			binderW = width - editorW - rightW
+			if binderW < 1 {
+				binderW = 1
+			}
+		}
 	}
 	if binderW < 1 {
 		binderW = 1
@@ -74,8 +110,13 @@ func computeLayout(width, height int) layoutSizes {
 	if editorW < 1 {
 		editorW = 1
 	}
-
-	return layoutSizes{binderW: binderW, editorW: editorW, paneH: paneH}
+	if rightW < 1 {
+		rightW = 1
+	}
+	// Note: at width < 3, three panes each floored to 1 sum to 3 > width.
+	// This is mathematically unavoidable — three positive integers cannot sum
+	// to less than 3 — and only affects unusably narrow terminals (< 3 cols).
+	return layoutSizes{binderW: binderW, editorW: editorW, rightPanelW: rightW, paneH: paneH}
 }
 
 // Model is the root bubbletea model for chisel.
@@ -109,6 +150,11 @@ type Model struct {
 
 	// prompt is the inline bottom-bar input for binder CRUD (new, rename, delete).
 	prompt binderPrompt
+
+	// Right panel (Phase 8). showRightPanel toggles the panel; the panel itself
+	// is binder-driven (it reflects the current selection, no independent focus).
+	showRightPanel bool
+	rightPanel     rightPanelModel
 }
 
 // NewModel creates a new chisel root model for the given project directory.
@@ -130,6 +176,7 @@ func NewModel(root string) (Model, error) {
 		root:       root,
 		pandocPath: pandocPath,
 		prompt:     newBinderPrompt(),
+		rightPanel: newRightPanel(root),
 	}, nil
 }
 
@@ -198,12 +245,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				path := m.binder.SelectedFile()
 				if path != "" {
 					cmds = append(cmds, m.openScene(path))
+					m.syncRightPanel()
 				} else {
 					// A folder (or nothing) is selected — let the binder
 					// toggle it open/closed.
 					var cmd tea.Cmd
 					m.binder, cmd = m.binder.Update(msg)
 					cmds = append(cmds, cmd)
+					m.syncRightPanel()
 				}
 			} else {
 				// Editor focused — Enter must insert a newline, not be
@@ -308,6 +357,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, statusTick())
 			}
 
+		case "f5":
+			m.showRightPanel = !m.showRightPanel
+			m.layout()
+			if m.showRightPanel {
+				m.syncRightPanel()
+			}
+
 		case "ctrl+e":
 			p := core.NewProject(m.root)
 			result, err := p.Export(m.pandocPath)
@@ -333,6 +389,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				var cmd tea.Cmd
 				m.binder, cmd = m.binder.Update(msg)
 				cmds = append(cmds, cmd)
+				m.syncRightPanel()
 			} else {
 				var cmd tea.Cmd
 				m.editor, cmd = m.editor.Update(msg)
@@ -404,11 +461,20 @@ func (m Model) View() string {
 		statusParts = append(statusParts, "[Outliner]  ↑/↓ Navigate  ←/→ Collapse/Expand  Enter=Open  F2=Corkboard  Esc=Back")
 
 	default:
-		body = lipgloss.JoinHorizontal(
-			lipgloss.Top,
-			m.binder.View(),
-			m.editor.View(),
-		)
+		if m.showRightPanel {
+			body = lipgloss.JoinHorizontal(
+				lipgloss.Top,
+				m.binder.View(),
+				m.editor.View(),
+				m.rightPanel.view(),
+			)
+		} else {
+			body = lipgloss.JoinHorizontal(
+				lipgloss.Top,
+				m.binder.View(),
+				m.editor.View(),
+			)
+		}
 
 		if m.statusMsg == "" && m.editor.FilePath() != "" {
 			mod := ""
@@ -423,9 +489,9 @@ func (m Model) View() string {
 		}
 
 		if m.focus == PaneBinder {
-			statusParts = append(statusParts, "[Binder]  Tab=Switch  n=New  N=Folder  r=Rename  d=Delete  F2=Corkboard  F3=Outliner")
+			statusParts = append(statusParts, "[Binder]  Tab=Switch  n=New  N=Folder  r=Rename  d=Delete  F2=Corkboard  F3=Outliner  F5=Panel")
 		} else {
-			statusParts = append(statusParts, "[Editor]  Tab=Switch  ^S=Save  ^N=New  F2=Corkboard  F3=Outliner  ^E=Export")
+			statusParts = append(statusParts, "[Editor]  Tab=Switch  ^S=Save  ^N=New  F2=Corkboard  F5=Panel  ^E=Export")
 		}
 	}
 
@@ -443,12 +509,13 @@ func (m Model) View() string {
 	return lipgloss.JoinVertical(lipgloss.Left, body, bottomBar)
 }
 
-// layout recalculates pane sizes after a window resize. It is the single place
-// that pushes sizes into the panes.
+// layout recalculates pane sizes after a window resize or panel toggle. It is
+// the single place that pushes sizes into the panes.
 func (m *Model) layout() {
-	l := computeLayout(m.width, m.height)
+	l := computeLayout(m.width, m.height, m.showRightPanel)
 	m.binder.SetSize(l.binderW, l.paneH)
 	m.editor.SetSize(l.editorW, l.paneH)
+	m.rightPanel.SetSize(l.rightPanelW, l.paneH)
 	// The history browser and the structural views all take the full width
 	// above the status bar.
 	fullH := m.height - 1
@@ -458,6 +525,16 @@ func (m *Model) layout() {
 	m.history.SetSize(m.width, fullH)
 	m.corkboard.SetSize(m.width, fullH)
 	m.outliner.SetSize(m.width, fullH)
+}
+
+// syncRightPanel updates the right panel's content to match the current binder
+// selection. No-op when the panel is hidden. Called after any binder key event
+// and after CRUD operations that refresh the tree.
+func (m *Model) syncRightPanel() {
+	if !m.showRightPanel {
+		return
+	}
+	m.rightPanel.SyncToSelection(m.binder.SelectedFile())
 }
 
 // ensureBackend lazily opens (initializing on first use) the revision backend
@@ -704,6 +781,8 @@ func (m Model) executePrompt() (tea.Model, tea.Cmd) {
 		}
 		m.binder.RefreshPreservingExpanded()
 		m.binder.SelectPath(path)
+		m.rightPanel.markCastDirty()
+		m.syncRightPanel()
 		m.focus = PaneEditor
 		m.binder.Focus(false)
 		m.editor.Focus(true)
@@ -726,6 +805,8 @@ func (m Model) executePrompt() (tea.Model, tea.Cmd) {
 		}
 		m.binder.RefreshPreservingExpanded()
 		m.binder.SelectPath(newPath)
+		m.rightPanel.markCastDirty()
+		m.syncRightPanel()
 		m.statusMsg = fmt.Sprintf("Created folder '%s'", name)
 		m.statusTimer = 2
 		cmds = append(cmds, statusTick())
@@ -748,6 +829,8 @@ func (m Model) executePrompt() (tea.Model, tea.Cmd) {
 		}
 		m.binder.RefreshPreservingExpanded()
 		m.binder.SelectPath(newPath)
+		m.rightPanel.markCastDirty()
+		m.syncRightPanel()
 		m.statusMsg = fmt.Sprintf("Renamed to '%s'", filepath.Base(newPath))
 		m.statusTimer = 2
 		cmds = append(cmds, statusTick())
@@ -761,11 +844,12 @@ func (m Model) executePrompt() (tea.Model, tea.Cmd) {
 			break
 		}
 		// Clear the editor if the open file (or a file inside a deleted folder) is gone.
-		openPath := m.editor.FilePath()
-		if openPath == ctx || strings.HasPrefix(openPath, ctx+string(filepath.Separator)) {
+		if isUnderDir(m.editor.FilePath(), ctx) {
 			m.editor.Clear()
 		}
 		m.binder.RefreshPreservingExpanded()
+		m.rightPanel.markCastDirty()
+		m.syncRightPanel()
 		m.statusMsg = fmt.Sprintf("Deleted '%s'", baseName)
 		m.statusTimer = 2
 		cmds = append(cmds, statusTick())
