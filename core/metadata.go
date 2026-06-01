@@ -38,9 +38,10 @@ type Metadata struct {
 	DraftOrder int        `yaml:"draft_order,omitempty"`
 	WordTarget int        `yaml:"word_target,omitempty"`
 	POV        string     `yaml:"pov,omitempty"`
-	WordCount  int        `yaml:"word_count,omitempty"`
-	Created    *time.Time `yaml:"created,omitempty"`
-	Modified   *time.Time `yaml:"modified,omitempty"`
+	WordCount    int        `yaml:"word_count,omitempty"`
+	Created      *time.Time `yaml:"created,omitempty"`
+	Modified     *time.Time `yaml:"modified,omitempty"`
+	TimelineDate *time.Time `yaml:"timeline_date,omitempty"`
 }
 
 // IsEmpty reports whether the metadata carries no information. An empty scene is
@@ -55,7 +56,8 @@ func (m Metadata) IsEmpty() bool {
 		m.POV == "" &&
 		m.WordCount == 0 &&
 		m.Created == nil &&
-		m.Modified == nil
+		m.Modified == nil &&
+		m.TimelineDate == nil
 }
 
 // parseFrontmatterInto splits raw content using splitFrontmatter and

@@ -30,6 +30,7 @@ const (
 	viewMain viewMode = iota
 	viewCorkboard
 	viewOutliner
+	viewTimeline
 )
 
 // minBinderWidth is the narrowest the binder pane may shrink to before the
@@ -138,11 +139,12 @@ type Model struct {
 	history     historyModel
 	showHistory bool
 
-	// Structural views (Phase 4). viewMode picks which is shown; corkboard and
-	// outliner are loaded on entry (F2/F3) and own all keys while active.
+	// Structural views (Phase 4+). viewMode picks which is shown; each view is
+	// loaded on entry and owns all keys while active.
 	viewMode  viewMode
 	corkboard corkboardModel
 	outliner  outlinerModel
+	timeline  timelineModel
 
 	// pandocPath is the resolved path to the pandoc binary, or "" if not
 	// found. Detected once in NewModel; gates the .docx export offer.
@@ -363,6 +365,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, statusTick())
 			}
 
+		case "f4":
+			if err := m.enterTimeline(); err != nil {
+				m.statusMsg = fmt.Sprintf("Error opening timeline: %v", err)
+				m.statusTimer = 3
+				cmds = append(cmds, statusTick())
+			}
+
 		case "f5":
 			m.showRightPanel = !m.showRightPanel
 			m.layout()
@@ -461,11 +470,15 @@ func (m Model) View() string {
 
 	case m.viewMode == viewCorkboard:
 		body = m.corkboard.view()
-		statusParts = append(statusParts, "[Corkboard]  ←→↑↓ Navigate  Enter=Open  F3=Outliner  Esc=Back")
+		statusParts = append(statusParts, "[Corkboard]  ←→↑↓ Navigate  Enter=Open  F3=Outliner  F4=Timeline  Esc=Back")
 
 	case m.viewMode == viewOutliner:
 		body = m.outliner.view()
-		statusParts = append(statusParts, "[Outliner]  ↑/↓ Navigate  ←/→ Collapse/Expand  Enter=Open  F2=Corkboard  Esc=Back")
+		statusParts = append(statusParts, "[Outliner]  ↑/↓ Navigate  ←/→ Collapse/Expand  Enter=Open  F2=Corkboard  F4=Timeline  Esc=Back")
+
+	case m.viewMode == viewTimeline:
+		body = m.timeline.view()
+		statusParts = append(statusParts, "[Timeline]  ↑/↓ Navigate  Enter=Open  F2=Corkboard  F3=Outliner  Esc=Back")
 
 	default:
 		if m.showRightPanel {
@@ -496,9 +509,9 @@ func (m Model) View() string {
 		}
 
 		if m.focus == PaneBinder {
-			statusParts = append(statusParts, "[Binder]  Tab=Switch  n=New  N=Folder  r=Rename  d=Delete  F2=Corkboard  F3=Outliner  F5=Panel")
+			statusParts = append(statusParts, "[Binder]  Tab=Switch  n=New  N=Folder  r=Rename  d=Delete  F2=Corkboard  F3=Outliner  F4=Timeline  F5=Panel")
 		} else {
-			statusParts = append(statusParts, "[Editor]  Tab=Switch  ^S=Save  ^N=New  F2=Corkboard  F5=Panel  ^E=Export")
+			statusParts = append(statusParts, "[Editor]  Tab=Switch  ^S=Save  ^N=New  F2=Corkboard  F4=Timeline  F5=Panel  ^E=Export")
 		}
 	}
 
@@ -532,6 +545,7 @@ func (m *Model) layout() {
 	m.history.SetSize(m.width, fullH)
 	m.corkboard.SetSize(m.width, fullH)
 	m.outliner.SetSize(m.width, fullH)
+	m.timeline.SetSize(m.width, fullH)
 }
 
 // syncRightPanel updates the right panel's content to match the current binder
@@ -683,6 +697,20 @@ func (m *Model) enterOutliner() error {
 	return nil
 }
 
+// enterTimeline loads the project timeline and shows it.
+func (m *Model) enterTimeline() error {
+	if err := m.timeline.open(m.root); err != nil {
+		return err
+	}
+	fullH := m.height - 1
+	if fullH < 1 {
+		fullH = 1
+	}
+	m.timeline.SetSize(m.width, fullH)
+	m.viewMode = viewTimeline
+	return nil
+}
+
 // updateView routes a key press to the active structural view. F1/Esc returns to
 // the main view; F2/F3 hop directly between the structural views; everything else
 // is forwarded to the active view, whose reported action (open/close) is applied.
@@ -705,6 +733,13 @@ func (m Model) updateView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, statusTick()
 		}
 		return m, nil
+	case "f4":
+		if err := m.enterTimeline(); err != nil {
+			m.statusMsg = fmt.Sprintf("Error opening timeline: %v", err)
+			m.statusTimer = 3
+			return m, statusTick()
+		}
+		return m, nil
 	}
 
 	var action viewAction
@@ -716,6 +751,9 @@ func (m Model) updateView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case viewOutliner:
 		m.outliner, action = m.outliner.update(msg)
 		path = m.outliner.selected()
+	case viewTimeline:
+		m.timeline, action = m.timeline.update(msg)
+		path = m.timeline.selected()
 	}
 
 	switch action {

@@ -24,15 +24,18 @@ Go binary (chisel)
   │   ├── export.go      — Project.Export (compile manuscript.md + optional pandoc .docx)
   │   ├── crud.go        — CreateFolder, RenameNode (auto .md ext), DeleteNode (recursive)
   │   ├── scaffold.go    — ScaffoldProject, Slugify, ParseTemplate (3 templates)
-  │   └── character.go   — Character, CharacterMeta, LoadCharacter, ListCharacters
+  │   ├── character.go   — Character, CharacterMeta, LoadCharacter, ListCharacters
+  │   ├── location.go    — Location, LocationMeta, LoadLocation, ListLocations
+  │   └── timeline.go    — TimelineEntry, BuildTimeline (sorted by timeline_date)
   └── tui/               — Bubble Tea presentation layer
       ├── model.go       — root model; dispatches keys, owns layout, pandoc detection
       ├── binder.go      — file tree pane (bubbles/tree over core.FileNode)
       ├── editor.go      — markdown editor (bubbles/textarea over core.Scene)
       ├── history.go     — revision history browser (Ctrl+H)
-      ├── corkboard.go    — index-card grid view (F2)
-      ├── outliner.go     — collapsible outline view (F3)
-      ├── rightpanel.go   — character inspector, binder-driven (F5)
+      ├── corkboard.go   — index-card grid view (F2)
+      ├── outliner.go    — collapsible outline view (F3)
+      ├── timeline.go    — date-sorted scene list (F4)
+      ├── rightpanel.go  — world panel: character/location inspector, binder-driven (F5)
       ├── prompt.go      — inline prompt bar for binder CRUD
       └── styles.go      — peach color palette, shared lipgloss styles
 ```
@@ -42,7 +45,7 @@ Go binary (chisel)
 ## data model
 
 - **Filesystem is the project.** A directory of `.md` files is everything. No manifest, no config.json, no sidecar files.
-- **YAML frontmatter** at the top of each `.md` is the metadata (title, status, synopsis, tags, draft_order, word_target, pov, word_count, created, modified). Files without frontmatter are plain markdown and still open/save cleanly.
+- **YAML frontmatter** at the top of each `.md` is the metadata (title, status, synopsis, tags, draft_order, word_target, pov, word_count, created, modified, timeline_date). Files without frontmatter are plain markdown and still open/save cleanly.
 - **Characters** live in `characters/` as `.md` files with their own frontmatter schema (name, role, description, tags). `ListCharacters` returns nil on missing dir (not error).
 - **Revision history** is git-backed (`go-git`, pure Go). Every `Ctrl+S` triggers an automatic snapshot. The `.git` directory is created inside the project root on first save. `RevisionBackend` interface allows future jj swap.
 - **Exports** go to `<project>/exports/manuscript.md` (and optionally `.docx` if pandoc is installed). Scenes are ordered by `draft_order` then filename. The `exports/` subdirectory is excluded from re-export.
@@ -130,11 +133,12 @@ No Python backend. No LLM. No manifest files. No system git dependency. No `os/e
 | d | Binder | Delete selected (y=confirm) |
 | F2 | Any | Open corkboard view |
 | F3 | Any | Open outliner view |
-| F5 | Any | Toggle right panel (character inspector) |
+| F4 | Any | Open timeline view (sorted by timeline_date frontmatter) |
+| F5 | Any | Toggle right panel (world panel: characters + locations) |
 | Ctrl+Q / Esc | Any | Quit (second press confirms if unsaved) |
 
 **In history browser:** ↑/↓ navigate snapshots, Enter show diff, `r` restore, Esc close
-**In corkboard/outliner:** ←/→/↑/↓ navigate, Enter open scene, Esc/F1 return to main, F2/F3 switch views
+**In corkboard/outliner/timeline:** ←/→/↑/↓ navigate, Enter open scene, Esc/F1 return to main, F2/F3/F4 cross-hop between structural views
 **In prompt bar:** type name then Enter to confirm, Esc to cancel (delete: y=confirm, any other key cancels)
 
 ## design patterns
@@ -194,17 +198,22 @@ The root model applies these actions — the sub-view never touches the root's s
 - **Phase 6:** Binder-side CRUD — create/rename/delete files and folders (n/N/r/d)
 - **Phase 7:** `chisel init` subcommand — 3 project templates (minimal/novel/short-stories), interactive + non-interactive
 - **Phase 8:** Right panel + character viewer — passive binder-driven inspector, character YAML frontmatter, cast list (F5)
+- **Phase 9:** Location sheets — `core/location.go`, `locations/` directory, unified world panel (characters + locations)
+- **Phase 10:** Timeline view (F4) — `core/timeline.go`, `tui/timeline.go`; scenes sorted by `timeline_date` frontmatter; undated section; F2/F3/F4 cross-hop
 
-## what's coming
+## what's coming (Phases 11–17+)
 
-- LLM assist (rewrite, generate, summarize, research) via local or cloud model
-- Per-scene notes and richer character sheets (arc, relationships)
-- Themes (dark, light, forest, ocean), session word count, pomodoro sprint timer
-- Typewriter / focus mode, reading mode
-- GUI alongside the TUI (Wails or Fyne), reusing `core`
+- Quick-note popup (global capture overlay, scratchpad)
+- Scene notes + richer entity sheets (arc, relationships, voice)
+- Focus modes (typewriter scrolling, reading mode, paragraph dim) — iA Writer-inspired
+- Themes (dark/light/forest/ocean) + session word count + sprint/pomodoro timer
+- Tag browser + binder filtering
+- Project statistics (ASCII word-count-per-day chart from git history)
+- LLM integration (OpenAI-compatible, streaming, right-panel hosted)
+- GUI alongside the TUI (Wails or Fyne), reusing `core` — far future
 
 ## references
 
 - [DESIGN.md](DESIGN.md) — full v1.2 vision; features marked shipped/pending
 - Archive branch: `archive/chisel-full` — original v1.2 code (reference only)
-- Plan file: `~/.claude/plans/hi-so-this-project-zippy-russell.md`
+- Plan file: `~/.claude/plans/lets-go-with-the-wild-sonnet.md` (Phases 10–17 roadmap)

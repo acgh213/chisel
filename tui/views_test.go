@@ -123,13 +123,74 @@ func TestOutlinerFlow(t *testing.T) {
 	}
 }
 
+// TestTimelineFlow opens the timeline (F4), confirms scenes are listed, and
+// opens one with Enter.
+func TestTimelineFlow(t *testing.T) {
+	dir := twoSceneProject(t)
+	m0, err := NewModel(dir)
+	if err != nil {
+		t.Fatalf("NewModel: %v", err)
+	}
+	var m tea.Model = m0
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF4})
+	mm := m.(Model)
+	if mm.viewMode != viewTimeline {
+		t.Fatalf("after F4, viewMode = %v, want viewTimeline", mm.viewMode)
+	}
+	if len(mm.timeline.entries) != 2 {
+		t.Fatalf("timeline has %d entries, want 2", len(mm.timeline.entries))
+	}
+
+	// Enter on the first entry should open that scene.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	mm = m.(Model)
+	if mm.viewMode != viewMain {
+		t.Errorf("after Enter, viewMode = %v, want main", mm.viewMode)
+	}
+	if mm.editor.FilePath() == "" {
+		t.Error("Enter in timeline should have opened a scene")
+	}
+}
+
+// TestTimelineHop verifies F2/F3 cross-hop from the timeline view.
+func TestTimelineHop(t *testing.T) {
+	dir := twoSceneProject(t)
+	m0, err := NewModel(dir)
+	if err != nil {
+		t.Fatalf("NewModel: %v", err)
+	}
+	var m tea.Model = m0
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+
+	// Open timeline, then hop to corkboard via F2.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF4})
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF2})
+	if mm := m.(Model); mm.viewMode != viewCorkboard {
+		t.Errorf("F4→F2: viewMode = %v, want corkboard", mm.viewMode)
+	}
+
+	// Hop back to timeline via F4.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF4})
+	if mm := m.(Model); mm.viewMode != viewTimeline {
+		t.Errorf("F2→F4: viewMode = %v, want timeline", mm.viewMode)
+	}
+
+	// Hop to outliner via F3.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF3})
+	if mm := m.(Model); mm.viewMode != viewOutliner {
+		t.Errorf("F4→F3: viewMode = %v, want outliner", mm.viewMode)
+	}
+}
+
 // TestStructuralViewsFitTerminal renders the corkboard and outliner at several
 // sizes and asserts the output never exceeds the terminal — same guarantee as
 // the main view, extended to the Phase-4 views.
 func TestStructuralViewsFitTerminal(t *testing.T) {
 	dir := twoSceneProject(t)
 	sizes := []struct{ w, h int }{{80, 24}, {120, 40}, {60, 20}, {40, 15}}
-	keys := []tea.KeyType{tea.KeyF2, tea.KeyF3}
+	keys := []tea.KeyType{tea.KeyF2, tea.KeyF3, tea.KeyF4}
 
 	for _, k := range keys {
 		for _, s := range sizes {
