@@ -793,7 +793,7 @@ func (m Model) executePrompt() (tea.Model, tea.Cmd) {
 		}
 		m.binder.RefreshPreservingExpanded()
 		m.binder.SelectPath(path)
-		m.rightPanel.markCastDirty()
+		m.rightPanel.markWorldDirty()
 		m.syncRightPanel()
 		m.focus = PaneEditor
 		m.binder.Focus(false)
@@ -817,7 +817,7 @@ func (m Model) executePrompt() (tea.Model, tea.Cmd) {
 		}
 		m.binder.RefreshPreservingExpanded()
 		m.binder.SelectPath(newPath)
-		m.rightPanel.markCastDirty()
+		m.rightPanel.markWorldDirty()
 		m.syncRightPanel()
 		m.statusMsg = fmt.Sprintf("Created folder '%s'", name)
 		m.statusTimer = 2
@@ -841,7 +841,7 @@ func (m Model) executePrompt() (tea.Model, tea.Cmd) {
 		}
 		m.binder.RefreshPreservingExpanded()
 		m.binder.SelectPath(newPath)
-		m.rightPanel.markCastDirty()
+		m.rightPanel.markWorldDirty()
 		m.syncRightPanel()
 		m.statusMsg = fmt.Sprintf("Renamed to '%s'", filepath.Base(newPath))
 		m.statusTimer = 2
@@ -860,7 +860,7 @@ func (m Model) executePrompt() (tea.Model, tea.Cmd) {
 			m.editor.Clear()
 		}
 		m.binder.RefreshPreservingExpanded()
-		m.rightPanel.markCastDirty()
+		m.rightPanel.markWorldDirty()
 		m.syncRightPanel()
 		m.statusMsg = fmt.Sprintf("Deleted '%s'", baseName)
 		m.statusTimer = 2
