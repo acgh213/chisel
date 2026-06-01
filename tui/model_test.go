@@ -29,7 +29,7 @@ func TestComputeLayoutSumsToWidth(t *testing.T) {
 		{21, 10}, // exactly minBinderWidth+1, the threshold
 	}
 	for _, c := range cases {
-		l := computeLayout(c.w, c.h)
+		l := computeLayout(c.w, c.h, false)
 		if l.binderW+l.editorW != c.w {
 			t.Errorf("computeLayout(%d,%d): binderW(%d)+editorW(%d)=%d, want %d",
 				c.w, c.h, l.binderW, l.editorW, l.binderW+l.editorW, c.w)
@@ -51,7 +51,7 @@ func TestComputeLayoutSumsToWidth(t *testing.T) {
 // TestComputeLayoutClampsTinyTerminal covers.)
 func TestComputeLayoutSumInvariant(t *testing.T) {
 	for w := 2; w <= 300; w++ {
-		l := computeLayout(w, 24)
+		l := computeLayout(w, 24, false)
 		if l.binderW+l.editorW != w {
 			t.Errorf("computeLayout(%d,24): binderW(%d)+editorW(%d)=%d, want %d",
 				w, l.binderW, l.editorW, l.binderW+l.editorW, w)
@@ -75,9 +75,14 @@ func TestComputeLayoutClampsTinyTerminal(t *testing.T) {
 		{0, 0},
 	}
 	for _, c := range cases {
-		l := computeLayout(c.w, c.h)
+		l := computeLayout(c.w, c.h, false)
 		if l.binderW < 1 || l.editorW < 1 || l.paneH < 1 {
 			t.Errorf("computeLayout(%d,%d) produced non-positive dimension: %+v", c.w, c.h, l)
+		}
+		// Also verify no panics for three-pane at tiny sizes.
+		l3 := computeLayout(c.w, c.h, true)
+		if l3.binderW < 1 || l3.editorW < 1 || l3.rightPanelW < 1 || l3.paneH < 1 {
+			t.Errorf("3-pane computeLayout(%d,%d) produced non-positive dimension: %+v", c.w, c.h, l3)
 		}
 	}
 }
@@ -145,6 +150,46 @@ func TestViewFitsTerminal(t *testing.T) {
 			if w := lipgloss.Width(ln); w > s.w {
 				t.Errorf("%dx%d: line %d width %d exceeds terminal width %d", s.w, s.h, i, w, s.w)
 			}
+		}
+	}
+}
+
+// TestComputeLayoutThreePaneSumsToWidth asserts the three-pane (right panel
+// open) split tiles the terminal exactly and all dimensions are positive for
+// typical terminal sizes.
+func TestComputeLayoutThreePaneSumsToWidth(t *testing.T) {
+	cases := []struct{ w, h int }{
+		{80, 24},
+		{120, 40},
+		{160, 50},
+		{200, 50},
+	}
+	for _, c := range cases {
+		l := computeLayout(c.w, c.h, true)
+		sum := l.binderW + l.editorW + l.rightPanelW
+		if sum != c.w {
+			t.Errorf("3-pane computeLayout(%d,%d): %d+%d+%d=%d, want %d",
+				c.w, c.h, l.binderW, l.editorW, l.rightPanelW, sum, c.w)
+		}
+		if l.binderW < 1 || l.editorW < 1 || l.rightPanelW < 1 {
+			t.Errorf("3-pane computeLayout(%d,%d): non-positive pane: %+v", c.w, c.h, l)
+		}
+	}
+}
+
+// TestComputeLayoutThreePaneSumInvariant checks the three-pane sum holds for
+// all widths >= 3.
+func TestComputeLayoutThreePaneSumInvariant(t *testing.T) {
+	for w := 3; w <= 300; w++ {
+		l := computeLayout(w, 24, true)
+		sum := l.binderW + l.editorW + l.rightPanelW
+		if sum != w {
+			t.Errorf("3-pane computeLayout(%d,24): sum %d+%d+%d=%d, want %d",
+				w, l.binderW, l.editorW, l.rightPanelW, sum, w)
+		}
+		if l.binderW < 1 || l.editorW < 1 || l.rightPanelW < 1 {
+			t.Errorf("3-pane computeLayout(%d,24): non-positive: binderW=%d editorW=%d rightW=%d",
+				w, l.binderW, l.editorW, l.rightPanelW)
 		}
 	}
 }
