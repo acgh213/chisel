@@ -178,3 +178,50 @@ func TestBodyPreservedWithBlankLines(t *testing.T) {
 			strings.Count(gotBody, "\n"), strings.Count(body, "\n"))
 	}
 }
+
+func TestMetadata_NotesRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "scene.md")
+
+	sc := &Scene{
+		Path: path,
+		Meta: Metadata{
+			Title: "A Scene",
+			Notes: "remember to check the timeline here",
+		},
+		Body: "The scene body.\n",
+	}
+	if err := sc.Save(); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	loaded, err := LoadScene(path)
+	if err != nil {
+		t.Fatalf("LoadScene: %v", err)
+	}
+	if loaded.Meta.Notes != "remember to check the timeline here" {
+		t.Errorf("Notes = %q, want %q", loaded.Meta.Notes, "remember to check the timeline here")
+	}
+}
+
+func TestMetadata_NotesOnlyNotEmpty(t *testing.T) {
+	// A scene with only Notes set must not be treated as empty — otherwise
+	// serializeFrontmatter drops the frontmatter block and the note is lost on save.
+	m := Metadata{Notes: "just a note"}
+	if m.IsEmpty() {
+		t.Error("Metadata with only Notes set should not be IsEmpty()")
+	}
+}
+
+func TestMetadata_NotesOmittedWhenEmpty(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "plain.md")
+
+	sc := &Scene{Path: path, Meta: Metadata{Title: "T"}, Body: "body\n"}
+	if err := sc.Save(); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	data, _ := os.ReadFile(path)
+	if strings.Contains(string(data), "notes:") {
+		t.Error("notes key should be absent when Notes is empty")
+	}
+}
