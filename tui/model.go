@@ -542,9 +542,9 @@ func (m Model) View() string {
 
 	full := lipgloss.JoinVertical(lipgloss.Left, body, bottomBar)
 
-	// Quick-note popup overlays the entire view when active.
+	// Quick-note popup overlays the existing view; background content stays visible.
 	if m.quickNote.active() {
-		return m.quickNote.view(m.width, m.height)
+		return m.quickNote.view(m.width, m.height, full)
 	}
 
 	return full
@@ -635,6 +635,7 @@ func (m Model) updateQuickNote(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.statusMsg = fmt.Sprintf("Note error: %v", err)
 		} else {
 			m.statusMsg = "Note saved → notes/scratch.md"
+			m.binder.RefreshPreservingExpanded()
 		}
 		m.statusTimer = 3
 		return m, tea.Batch(statusTick(), cmd)

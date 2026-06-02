@@ -207,7 +207,6 @@ The root model applies these actions — the sub-view never touches the root's s
 
 ## what's coming (Phases 12–17+)
 
-- Quick-note popup (global capture overlay, scratchpad)
 - Scene notes + richer entity sheets (arc, relationships, voice)
 - Focus modes (typewriter scrolling, reading mode, paragraph dim) — iA Writer-inspired
 - Themes (dark/light/forest/ocean) + session word count + sprint/pomodoro timer
