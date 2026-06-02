@@ -77,9 +77,9 @@ func (q quickNoteModel) update(msg tea.KeyMsg) (quickNoteModel, quickNoteAction,
 	}
 }
 
-// view renders the popup centered within a terminal canvas of w×h. The rest
-// of the canvas is filled with whitespace so the popup appears modal.
-func (q quickNoteModel) view(w, h int) string {
+// view renders the popup near the bottom of the screen, overlaid on bg so the
+// user can still see their work above it.
+func (q quickNoteModel) view(w, h int, bg string) string {
 	header := lipgloss.NewStyle().
 		Foreground(ColorAccent).
 		Bold(true).
@@ -107,5 +107,31 @@ func (q quickNoteModel) view(w, h int) string {
 		Width(innerW).
 		Render(inner)
 
-	return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, popup)
+	popupH := lipgloss.Height(popup)
+
+	// Center the popup horizontally in a strip the height of the popup only.
+	centeredStrip := lipgloss.Place(w, popupH, lipgloss.Center, lipgloss.Center, popup)
+	stripLines := strings.Split(centeredStrip, "\n")
+
+	// Build result from the background, replacing only the rows the popup occupies.
+	bgLines := strings.Split(bg, "\n")
+	for len(bgLines) < h {
+		bgLines = append(bgLines, strings.Repeat(" ", w))
+	}
+
+	// Position the popup just above the status bar row (last line of bg).
+	startRow := h - popupH - 1
+	if startRow < 0 {
+		startRow = 0
+	}
+
+	result := make([]string, h)
+	copy(result, bgLines[:h])
+	for i, line := range stripLines {
+		if startRow+i < h {
+			result[startRow+i] = line
+		}
+	}
+
+	return strings.Join(result, "\n")
 }
