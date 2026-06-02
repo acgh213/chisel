@@ -177,6 +177,81 @@ func TestComputeLayoutThreePaneSumsToWidth(t *testing.T) {
 	}
 }
 
+// TestQuickNoteFlow opens the quick-note popup with backtick, types a note,
+// confirms with Enter, and checks the popup is dismissed.
+func TestQuickNoteFlow(t *testing.T) {
+	dir := twoSceneProject(t)
+	m0, err := NewModel(dir)
+	if err != nil {
+		t.Fatalf("NewModel: %v", err)
+	}
+	var m tea.Model = m0
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+
+	// Backtick should open the popup.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("`")})
+	if mm := m.(Model); !mm.quickNote.active() {
+		t.Fatal("backtick should activate the quick-note popup")
+	}
+
+	// Type some text.
+	for _, r := range "hello world" {
+		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+
+	// Enter should save and close.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	mm := m.(Model)
+	if mm.quickNote.active() {
+		t.Error("quick-note popup should be closed after Enter")
+	}
+	if !strings.Contains(mm.statusMsg, "saved") {
+		t.Errorf("expected status message about saved note, got %q", mm.statusMsg)
+	}
+}
+
+// TestQuickNoteEscCancels confirms Esc closes without saving.
+func TestQuickNoteEscCancels(t *testing.T) {
+	dir := twoSceneProject(t)
+	m0, err := NewModel(dir)
+	if err != nil {
+		t.Fatalf("NewModel: %v", err)
+	}
+	var m tea.Model = m0
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("`")})
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+
+	if mm := m.(Model); mm.quickNote.active() {
+		t.Error("quick-note popup should be closed after Esc")
+	}
+}
+
+// TestQuickNoteOpensFromStructuralView confirms backtick works even when a
+// structural view (corkboard, outliner, timeline) is the active mode.
+func TestQuickNoteOpensFromStructuralView(t *testing.T) {
+	dir := twoSceneProject(t)
+	m0, err := NewModel(dir)
+	if err != nil {
+		t.Fatalf("NewModel: %v", err)
+	}
+	var m tea.Model = m0
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+
+	// Open corkboard first.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF2})
+	if mm := m.(Model); mm.viewMode != viewCorkboard {
+		t.Fatal("expected corkboard view")
+	}
+
+	// Backtick should open the quick-note popup even from corkboard.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("`")})
+	if mm := m.(Model); !mm.quickNote.active() {
+		t.Error("backtick should open quick-note from structural view")
+	}
+}
+
 // TestComputeLayoutThreePaneSumInvariant checks the three-pane sum holds for
 // all widths >= 3. Below 3 columns the sum exceeds width by design: three
 // panes each floored to 1 must sum to at least 3, so the invariant cannot

@@ -26,7 +26,8 @@ Go binary (chisel)
   │   ├── scaffold.go    — ScaffoldProject, Slugify, ParseTemplate (3 templates)
   │   ├── character.go   — Character, CharacterMeta, LoadCharacter, ListCharacters
   │   ├── location.go    — Location, LocationMeta, LoadLocation, ListLocations
-  │   └── timeline.go    — TimelineEntry, BuildTimeline (sorted by timeline_date)
+  │   ├── timeline.go    — TimelineEntry, BuildTimeline (sorted by timeline_date)
+  │   └── notes.go       — AppendScratch (append-only notes/scratch.md journal)
   └── tui/               — Bubble Tea presentation layer
       ├── model.go       — root model; dispatches keys, owns layout, pandoc detection
       ├── binder.go      — file tree pane (bubbles/tree over core.FileNode)
@@ -35,6 +36,7 @@ Go binary (chisel)
       ├── corkboard.go   — index-card grid view (F2)
       ├── outliner.go    — collapsible outline view (F3)
       ├── timeline.go    — date-sorted scene list (F4)
+      ├── quicknote.go   — floating quick-note popup (backtick, any state)
       ├── rightpanel.go  — world panel: character/location inspector, binder-driven (F5)
       ├── prompt.go      — inline prompt bar for binder CRUD
       └── styles.go      — peach color palette, shared lipgloss styles
@@ -135,6 +137,7 @@ No Python backend. No LLM. No manifest files. No system git dependency. No `os/e
 | F3 | Any | Open outliner view |
 | F4 | Any | Open timeline view (sorted by timeline_date frontmatter) |
 | F5 | Any | Toggle right panel (world panel: characters + locations) |
+| ` (backtick) | Any | Open quick-note popup (saves to notes/scratch.md) |
 | Ctrl+Q / Esc | Any | Quit (second press confirms if unsaved) |
 
 **In history browser:** ↑/↓ navigate snapshots, Enter show diff, `r` restore, Esc close
@@ -200,10 +203,10 @@ The root model applies these actions — the sub-view never touches the root's s
 - **Phase 8:** Right panel + character viewer — passive binder-driven inspector, character YAML frontmatter, cast list (F5)
 - **Phase 9:** Location sheets — `core/location.go`, `locations/` directory, unified world panel (characters + locations)
 - **Phase 10:** Timeline view (F4) — `core/timeline.go`, `tui/timeline.go`; scenes sorted by `timeline_date` frontmatter; undated section; F2/F3/F4 cross-hop
+- **Phase 11:** Quick-note popup (backtick) — `core/notes.go` AppendScratch, `tui/quicknote.go`; global overlay from any state; saves to `notes/scratch.md`
 
-## what's coming (Phases 11–17+)
+## what's coming (Phases 12–17+)
 
-- Quick-note popup (global capture overlay, scratchpad)
 - Scene notes + richer entity sheets (arc, relationships, voice)
 - Focus modes (typewriter scrolling, reading mode, paragraph dim) — iA Writer-inspired
 - Themes (dark/light/forest/ocean) + session word count + sprint/pomodoro timer
