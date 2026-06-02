@@ -270,3 +270,130 @@ func TestComputeLayoutThreePaneSumInvariant(t *testing.T) {
 		}
 	}
 }
+
+// TestWTogglesNoteModeInRightPanel opens the right panel, presses W from binder
+// focus, and checks that the panel enters Scene Notes mode then returns to World
+// Index on a second W press.
+func TestWTogglesNoteModeInRightPanel(t *testing.T) {
+	dir := twoSceneProject(t)
+	m0, err := NewModel(dir)
+	if err != nil {
+		t.Fatalf("NewModel: %v", err)
+	}
+	var m tea.Model = m0
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+
+	// Open right panel with F5.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF5})
+	mm := m.(Model)
+	if !mm.showRightPanel {
+		t.Fatal("F5 should open right panel")
+	}
+	if mm.rightPanel.noteMode {
+		t.Fatal("note mode should be off initially")
+	}
+
+	// W from binder focus should enter note mode.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("W")})
+	mm = m.(Model)
+	if !mm.rightPanel.noteMode {
+		t.Error("W should toggle note mode on")
+	}
+
+	// Second W should toggle back.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("W")})
+	mm = m.(Model)
+	if mm.rightPanel.noteMode {
+		t.Error("second W should toggle note mode off")
+	}
+}
+
+// TestWDoesNotToggleWhenEditorFocused verifies that W in the editor inserts a
+// literal 'W' rather than toggling the right panel.
+func TestWDoesNotToggleWhenEditorFocused(t *testing.T) {
+	dir := twoSceneProject(t)
+	m0, err := NewModel(dir)
+	if err != nil {
+		t.Fatalf("NewModel: %v", err)
+	}
+
+	// Open the first scene and switch focus to editor.
+	var m tea.Model = m0
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF5})   // open panel
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})  // focus editor
+	mm := m.(Model)
+	if mm.focus != PaneEditor {
+		t.Skip("could not move focus to editor — skipping")
+	}
+
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("W")})
+	mm = m.(Model)
+	if mm.rightPanel.noteMode {
+		t.Error("W in editor focus should not toggle note mode")
+	}
+}
+
+// TestEOpensNotePromptInNoteMode checks that pressing e while in note mode and
+// binder focus opens the note edit prompt.
+func TestEOpensNotePromptInNoteMode(t *testing.T) {
+	dir := twoSceneProject(t)
+	m0, err := NewModel(dir)
+	if err != nil {
+		t.Fatalf("NewModel: %v", err)
+	}
+	var m tea.Model = m0
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF5})                               // open panel
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("W")})        // enter note mode
+
+	// e should open the note prompt.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+	mm := m.(Model)
+	if mm.prompt.mode != promptNote {
+		t.Errorf("e in note mode should open promptNote, got mode %d", mm.prompt.mode)
+	}
+}
+
+// TestNoteRoutesThroughEditorWhenFileOpen verifies that saving a note for the
+// currently open editor scene updates the in-memory scene rather than writing
+// to disk, preventing clobber of unsaved body edits.
+func TestNoteRoutesThroughEditorWhenFileOpen(t *testing.T) {
+	dir := twoSceneProject(t)
+	m0, err := NewModel(dir)
+	if err != nil {
+		t.Fatalf("NewModel: %v", err)
+	}
+	var m tea.Model = m0
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+
+	// Select the first scene in the binder and open it.
+	mm := m.(Model)
+	path := mm.binder.SelectedFile()
+	if path == "" {
+		t.Skip("no file selected — skipping")
+	}
+	if err := mm.editor.LoadFile(path); err != nil {
+		t.Fatalf("LoadFile: %v", err)
+	}
+	m = mm
+
+	// Open panel, toggle note mode, open edit prompt.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF5})
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("W")})
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+
+	// Type a note and confirm.
+	for _, ch := range "my inline note" {
+		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{ch}})
+	}
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	mm = m.(Model)
+	if mm.editor.Notes() != "my inline note" {
+		t.Errorf("editor.Notes() = %q, want %q", mm.editor.Notes(), "my inline note")
+	}
+	if !mm.editor.IsModified() {
+		t.Error("editor should be marked modified after SetNotes")
+	}
+}

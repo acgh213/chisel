@@ -42,6 +42,7 @@ type Metadata struct {
 	Created      *time.Time `yaml:"created,omitempty"`
 	Modified     *time.Time `yaml:"modified,omitempty"`
 	TimelineDate *time.Time `yaml:"timeline_date,omitempty"`
+	Notes        string     `yaml:"notes,omitempty"`
 }
 
 // IsEmpty reports whether the metadata carries no information. An empty scene is
@@ -57,7 +58,8 @@ func (m Metadata) IsEmpty() bool {
 		m.WordCount == 0 &&
 		m.Created == nil &&
 		m.Modified == nil &&
-		m.TimelineDate == nil
+		m.TimelineDate == nil &&
+		m.Notes == ""
 }
 
 // parseFrontmatterInto splits raw content using splitFrontmatter and
@@ -190,4 +192,10 @@ func readMetadata(path string) Metadata {
 	// No closing delimiter (or a scan error) — treat as no metadata, matching
 	// parseFrontmatter's handling of an unterminated block.
 	return Metadata{}
+}
+
+// ReadSceneNotes reads only the Notes metadata field from a scene file without
+// loading the full body. Returns empty string on any error or missing field.
+func ReadSceneNotes(path string) string {
+	return readMetadata(path).Notes
 }

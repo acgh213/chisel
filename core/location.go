@@ -7,19 +7,20 @@ import (
 	"strings"
 )
 
-// LocationMeta is the YAML frontmatter for a location file. Uses Type rather
-// than Role (a location is a city, forest, building, etc.) but otherwise
-// mirrors CharacterMeta so both types share the same panel rendering.
+// LocationMeta is the YAML frontmatter for a location file.
 type LocationMeta struct {
-	Name        string   `yaml:"name,omitempty"`
-	Type        string   `yaml:"type,omitempty"` // city, forest, building, region, …
-	Description string   `yaml:"description,omitempty"`
-	Tags        []string `yaml:"tags,omitempty"`
+	Name         string   `yaml:"name,omitempty"`
+	Type         string   `yaml:"type,omitempty"` // city, forest, building, region, …
+	Description  string   `yaml:"description,omitempty"`
+	Atmosphere   string   `yaml:"atmosphere,omitempty"`
+	Significance string   `yaml:"significance,omitempty"`
+	Tags         []string `yaml:"tags,omitempty"`
 }
 
 // IsEmpty reports whether the metadata carries no information.
 func (m LocationMeta) IsEmpty() bool {
-	return m.Name == "" && m.Type == "" && m.Description == "" && len(m.Tags) == 0
+	return m.Name == "" && m.Type == "" && m.Description == "" &&
+		m.Atmosphere == "" && m.Significance == "" && len(m.Tags) == 0
 }
 
 // Location is one file in the locations/ subdirectory: optional YAML

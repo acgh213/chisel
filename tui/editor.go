@@ -165,6 +165,24 @@ func (m EditorModel) Content() string {
 	return m.textarea.Value()
 }
 
+// Notes returns the Notes metadata field of the current scene, or "" if none open.
+func (m EditorModel) Notes() string {
+	if m.scene == nil {
+		return ""
+	}
+	return m.scene.Meta.Notes
+}
+
+// SetNotes updates the Notes metadata field on the in-memory scene and marks
+// the scene as modified so the next Ctrl+S persists the change.
+func (m *EditorModel) SetNotes(notes string) {
+	if m.scene == nil {
+		return
+	}
+	m.scene.Meta.Notes = notes
+	m.modified = true
+}
+
 // WordCount returns an estimate of the word count.
 func (m EditorModel) WordCount() int {
 	return core.WordCount(m.textarea.Value())
