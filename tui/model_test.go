@@ -397,3 +397,92 @@ func TestNoteRoutesThroughEditorWhenFileOpen(t *testing.T) {
 		t.Error("editor should be marked modified after SetNotes")
 	}
 }
+
+// TestSearchOpenClose opens the search overlay with Ctrl+F and closes it with Esc.
+func TestSearchOpenClose(t *testing.T) {
+	dir := twoSceneProject(t)
+	m0, err := NewModel(dir)
+	if err != nil {
+		t.Fatalf("NewModel: %v", err)
+	}
+	var m tea.Model = m0
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+
+	// Ctrl+F should open the search overlay.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlF})
+	if mm := m.(Model); !mm.search.active() {
+		t.Fatal("Ctrl+F should activate the search overlay")
+	}
+
+	// Esc should close it.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if mm := m.(Model); mm.search.active() {
+		t.Error("Esc should close the search overlay")
+	}
+}
+
+// TestSearchFlowOpensScene types a query, runs the search, and opens a result.
+func TestSearchFlowOpensScene(t *testing.T) {
+	dir := twoSceneProject(t) // a.md body: "one two three"; b.md body: "just four words here"
+	m0, err := NewModel(dir)
+	if err != nil {
+		t.Fatalf("NewModel: %v", err)
+	}
+	var m tea.Model = m0
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+
+	// Open search.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlF})
+
+	// Type "three" — only a.md body contains it.
+	for _, r := range "three" {
+		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+
+	// Enter runs the search and should switch to browse mode.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	mm := m.(Model)
+	if !mm.search.active() {
+		t.Fatal("search should still be active after running a search with results")
+	}
+	if mm.search.mode != searchBrowsing {
+		t.Fatalf("search mode should be searchBrowsing after Enter with results, got %v", mm.search.mode)
+	}
+	if len(mm.search.results) == 0 {
+		t.Fatal("expected at least one search result for 'three'")
+	}
+
+	// Enter again opens the selected scene.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	mm = m.(Model)
+	if mm.search.active() {
+		t.Error("search overlay should be closed after opening a result")
+	}
+	if mm.editor.FilePath() == "" {
+		t.Error("editor should have a file open after selecting a search result")
+	}
+}
+
+// TestSearchOpensFromStructuralView confirms Ctrl+F works even when a structural
+// view (corkboard, outliner, timeline) is the active mode.
+func TestSearchOpensFromStructuralView(t *testing.T) {
+	dir := twoSceneProject(t)
+	m0, err := NewModel(dir)
+	if err != nil {
+		t.Fatalf("NewModel: %v", err)
+	}
+	var m tea.Model = m0
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+
+	// Open corkboard first.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF2})
+	if mm := m.(Model); mm.viewMode != viewCorkboard {
+		t.Fatal("expected corkboard view")
+	}
+
+	// Ctrl+F should open the search overlay from inside the corkboard.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlF})
+	if mm := m.(Model); !mm.search.active() {
+		t.Error("Ctrl+F should open search from a structural view")
+	}
+}
