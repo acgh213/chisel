@@ -28,7 +28,8 @@ Go binary (chisel)
   │   ├── location.go    — Location, LocationMeta, LoadLocation, ListLocations
   │   ├── timeline.go    — TimelineEntry, BuildTimeline (sorted by timeline_date)
   │   ├── notes.go       — AppendScratch (append-only notes/scratch.md journal)
-  │   └── search.go      — SearchResult, SearchScenes (case-insensitive full-text)
+  │   ├── search.go      — SearchResult, SearchScenes (case-insensitive full-text)
+  │   └── config.go      — ChiselConfig, LoadConfig, SaveConfig (.chisel.yaml)
   └── tui/               — Bubble Tea presentation layer
       ├── model.go       — root model; dispatches keys, owns layout, pandoc detection
       ├── binder.go      — file tree pane (bubbles/tree over core.FileNode)
@@ -42,14 +43,14 @@ Go binary (chisel)
       ├── reader.go      — full-screen reading mode (F6, any state with open scene)
       ├── rightpanel.go  — world panel: character/location inspector, binder-driven (F5)
       ├── prompt.go      — inline prompt bar for binder CRUD
-      └── styles.go      — peach color palette, shared lipgloss styles
+      └── styles.go      — 4 dark themes (peach/forest/ocean/midnight); Color* vars + rebuildStyles()
 ```
 
 **Hard rule:** `core/` has zero charmbracelet imports. All `core` types are plain Go structs — `go list -deps ./core` returns stdlib + `yaml.v3` + `go-git` only. A future GUI reuses `core` without touching `tui`.
 
 ## data model
 
-- **Filesystem is the project.** A directory of `.md` files is everything. No manifest, no config.json, no sidecar files.
+- **Filesystem is the project.** A directory of `.md` files is the scene/content data. No manifest, no sidecar files. App preferences (theme, daily goal) live in `.chisel.yaml` at the project root — this is intentional and is NOT a violation of the "no manifest" rule. The "filesystem is the project" rule applies to *scene content only*; `.chisel.yaml` is gracefully ignored when missing.
 - **YAML frontmatter** at the top of each `.md` is the metadata (title, status, synopsis, tags, draft_order, word_target, pov, word_count, created, modified, timeline_date). Files without frontmatter are plain markdown and still open/save cleanly.
 - **Characters** live in `characters/` as `.md` files with their own frontmatter schema (name, role, description, tags). `ListCharacters` returns nil on missing dir (not error).
 - **Revision history** is git-backed (`go-git`, pure Go). Every `Ctrl+S` triggers an automatic snapshot. The `.git` directory is created inside the project root on first save. `RevisionBackend` interface allows future jj swap.
@@ -141,6 +142,8 @@ No Python backend. No LLM. No manifest files. No system git dependency. No `os/e
 | F4 | Any | Open timeline view (sorted by timeline_date frontmatter) |
 | F5 | Any | Toggle right panel (world panel: characters + locations) |
 | F6 | Any (scene open) | Open full-screen reading mode (word-wrapped centered column) |
+| F7 | Any | Start/stop 25-min sprint timer; status bar shows countdown + words written |
+| Ctrl+T | Any | Cycle theme (peach → forest → ocean → midnight → peach); saves to .chisel.yaml |
 | W | Binder (right panel open) | Toggle right panel between World Index and Scene Notes |
 | e | Binder (right panel, note mode) | Edit scene note inline |
 | ` (backtick) | Any | Open quick-note popup (saves to notes/scratch.md) |
@@ -216,11 +219,12 @@ The root model applies these actions — the sub-view never touches the root's s
 - **Phase 12:** Scene notes + richer entity sheets — `notes` frontmatter field; W toggles right panel between World Index and Scene Notes; e edits note inline; `CharacterMeta` gains Arc/Voice/Relationships; `LocationMeta` gains Atmosphere/Significance
 - **Phase 13:** Full-text search (Ctrl+F) — `core/search.go` SearchScenes (body-only, case-insensitive, skips exports/.git); `tui/search.go` overlay popup; two-phase UX: type query → Enter to search → browse results → Enter to open scene
 - **Phase 14:** Reading mode (F6) — `tui/reader.go` full-screen centered column; word-wrapped prose; ↑/↓/j/k scroll; F6/Esc exits. Typewriter centering and paragraph dim deferred: bubbles/textarea has no scroll-offset setter and no per-line styling hook.
+- **Phase 19:** Themes + session stats + sprint timer — `core/config.go` (.chisel.yaml, LoadConfig/SaveConfig); 4 dark themes (peach/forest/ocean/midnight) via `ApplyTheme`/`rebuildStyles()` in `tui/styles.go`; Ctrl+T cycles theme and persists to .chisel.yaml; session word count accumulated on every save; F7 starts/stops a 25-min sprint timer with countdown in the status bar; light theme deferred (requires full-screen bg painting).
 
 ## what's coming (Phases 15–17+)
 
 - Typewriter centering + paragraph dim — requires bubbles/textarea fork or replacement (no scroll-offset API, no per-line styling hook)
-- Themes (dark/light/forest/ocean) + session word count + sprint/pomodoro timer
+- Light theme — requires full-screen ColorBg background painting (chisel relies on terminal background; light fg is unreadable without it)
 - Tag browser + binder filtering
 - Project statistics (ASCII word-count-per-day chart from git history)
 - LLM integration (OpenAI-compatible, streaming, right-panel hosted)

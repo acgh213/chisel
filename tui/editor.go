@@ -248,3 +248,16 @@ func (m *EditorModel) SetPath(newPath string) {
 		m.scene.Path = newPath
 	}
 }
+
+// RefreshStyles updates the textarea color fields to match the current theme.
+// Call after ApplyTheme() so the textarea picks up the new Color* values.
+func (m *EditorModel) RefreshStyles() {
+	m.textarea.FocusedStyle.CursorLine = lipgloss.NewStyle().Background(ColorHighlight)
+	m.textarea.BlurredStyle.CursorLine = lipgloss.NewStyle().Background(ColorHighlight)
+	m.textarea.FocusedStyle.Placeholder = lipgloss.NewStyle().Foreground(ColorDim)
+	m.textarea.BlurredStyle.Placeholder = lipgloss.NewStyle().Foreground(ColorDim)
+	m.textarea.FocusedStyle.Text = lipgloss.NewStyle().Foreground(ColorFg)
+	m.textarea.BlurredStyle.Text = lipgloss.NewStyle().Foreground(ColorFg)
+	m.textarea.FocusedStyle.Prompt = lipgloss.NewStyle().Foreground(ColorAccent)
+	m.textarea.BlurredStyle.Prompt = lipgloss.NewStyle().Foreground(ColorMuted)
+}

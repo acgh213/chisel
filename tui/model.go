@@ -169,6 +169,15 @@ type Model struct {
 	// Reading mode (Phase 14). F6 opens a full-screen centered reading view
 	// for the currently loaded scene; owns all keys while active.
 	reader readerModel
+
+	// Theme + session stats + sprint timer (Phase 19).
+	theme          string            // active theme name (peach/forest/ocean/midnight)
+	config         core.ChiselConfig // loaded from .chisel.yaml, written on theme change
+	sessionWords   int               // words written this session (accumulated on every save)
+	fileLoadWords  int               // word count at last load/save; baseline for delta
+	sprintActive   bool
+	sprintEnd      time.Time
+	sprintWordStart int // sessionWords when sprint started
 }
 
 // NewModel creates a new chisel root model for the given project directory.
@@ -183,7 +192,14 @@ func NewModel(root string) (Model, error) {
 
 	pandocPath, _ := exec.LookPath("pandoc")
 
-	return Model{
+	cfg, _ := core.LoadConfig(root)
+	theme := cfg.Theme
+	if theme == "" {
+		theme = "peach"
+	}
+	ApplyTheme(theme)
+
+	m := Model{
 		binder:     binder,
 		editor:     NewEditor(),
 		focus:      PaneBinder,
@@ -193,7 +209,11 @@ func NewModel(root string) (Model, error) {
 		rightPanel: newRightPanel(root),
 		quickNote:  newQuickNote(),
 		search:     newSearch(root),
-	}, nil
+		theme:      theme,
+		config:     cfg,
+	}
+	m.editor.RefreshStyles()
+	return m, nil
 }
 
 // Init initializes the root model. Alt-screen is enabled via tea.WithAltScreen
@@ -238,6 +258,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.statusTimer = 2
 				cmds = append(cmds, statusTick())
 			}
+			return m, tea.Batch(cmds...)
+		}
+		// F7 toggles the sprint timer from any state (not while quickNote or search is open).
+		if msg.String() == "f7" && !m.quickNote.active() && !m.search.active() {
+			if m.sprintActive {
+				m.sprintActive = false
+				gained := m.sessionWords - m.sprintWordStart
+				m.statusMsg = fmt.Sprintf("Sprint stopped — +%d words", gained)
+			} else {
+				m.sprintActive = true
+				m.sprintEnd = time.Now().Add(25 * time.Minute)
+				m.sprintWordStart = m.sessionWords
+				m.statusMsg = "Sprint started — 25 min"
+				cmds = append(cmds, sprintTick())
+			}
+			m.statusTimer = 3
+			cmds = append(cmds, statusTick())
 			return m, tea.Batch(cmds...)
 		}
 		// When reading mode is active it owns all keys.
@@ -319,6 +356,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if err := m.editor.Save(); err != nil {
 					m.statusMsg = fmt.Sprintf("Error saving: %v", err)
 				} else {
+					m.accumulateSessionWords()
 					path := m.editor.FilePath()
 					words := m.editor.WordCount()
 					m.statusMsg = fmt.Sprintf("Saved %s (%d words)", filepath.Base(path), words)
@@ -472,6 +510,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusTimer = 3
 			cmds = append(cmds, statusTick())
 
+		case "ctrl+t":
+			m.theme = NextTheme(m.theme)
+			ApplyTheme(m.theme)
+			m.editor.RefreshStyles()
+			m.config.Theme = m.theme
+			_ = core.SaveConfig(m.root, m.config)
+			m.statusMsg = fmt.Sprintf("Theme: %s", m.theme)
+			m.statusTimer = 2
+			cmds = append(cmds, statusTick())
+
 		default:
 			// Safety net: any key without an explicit case above is forwarded
 			// to the focused pane. Keys that DO have their own case (e.g.
@@ -507,6 +555,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.statusMsg = ""
 				m.pendingQuit = false // clear pending quit when message expires
+			}
+		}
+		return m, tea.Batch(cmds...)
+
+	case sprintTickMsg:
+		if m.sprintActive {
+			if time.Until(m.sprintEnd) <= 0 {
+				m.sprintActive = false
+				gained := m.sessionWords - m.sprintWordStart
+				m.statusMsg = fmt.Sprintf("Sprint done! +%d words", gained)
+				m.statusTimer = 5
+				cmds = append(cmds, statusTick())
+			} else {
+				cmds = append(cmds, sprintTick())
 			}
 		}
 		return m, tea.Batch(cmds...)
@@ -592,9 +654,22 @@ func (m Model) View() string {
 		}
 
 		if m.focus == PaneBinder {
-			statusParts = append(statusParts, "[Binder]  Tab=Switch  n=New  N=Folder  r=Rename  d=Delete  F2=Corkboard  F3=Outliner  F4=Timeline  F5=Panel  F6=Read  ^F=Search")
+			statusParts = append(statusParts, "[Binder]  Tab=Switch  n=New  N=Folder  r=Rename  d=Delete  F2=Corkboard  F3=Outliner  F4=Timeline  F5=Panel  F6=Read  F7=Sprint  ^T=Theme  ^F=Search")
 		} else {
-			statusParts = append(statusParts, "[Editor]  Tab=Switch  ^S=Save  ^N=New  F2=Corkboard  F4=Timeline  F5=Panel  F6=Read  ^E=Export  ^F=Search")
+			statusParts = append(statusParts, "[Editor]  Tab=Switch  ^S=Save  ^N=New  F2=Corkboard  F4=Timeline  F5=Panel  F6=Read  F7=Sprint  ^T=Theme  ^E=Export  ^F=Search")
+		}
+	}
+
+	// Sprint countdown or session word count, shown in every view.
+	if m.sprintActive {
+		remaining := time.Until(m.sprintEnd)
+		gained := m.sessionWords - m.sprintWordStart
+		statusParts = append(statusParts, fmt.Sprintf("Sprint %s  +%d words", formatDuration(remaining), gained))
+	} else if m.sessionWords > 0 {
+		if m.config.DailyGoal > 0 {
+			statusParts = append(statusParts, fmt.Sprintf("+%d/%d today", m.sessionWords, m.config.DailyGoal))
+		} else {
+			statusParts = append(statusParts, fmt.Sprintf("+%d today", m.sessionWords))
 		}
 	}
 
@@ -809,11 +884,15 @@ func (m *Model) openScene(path string) tea.Cmd {
 			return statusTick()
 		}
 	}
+	// Accumulate words from the file being left (after any auto-save above),
+	// then load the new file and reset the baseline.
+	m.accumulateSessionWords()
 	if err := m.editor.LoadFile(path); err != nil {
 		m.statusMsg = fmt.Sprintf("Error opening: %v", err)
 		m.statusTimer = 3
 		return statusTick()
 	}
+	m.fileLoadWords = m.editor.WordCount()
 	m.viewMode = viewMain
 	m.focus = PaneEditor
 	m.binder.Focus(false)
@@ -982,12 +1061,14 @@ func (m Model) executePrompt() (tea.Model, tea.Cmd) {
 				return m, tea.Batch(statusTick())
 			}
 		}
+		m.accumulateSessionWords()
 		if err := m.editor.NewScene(path); err != nil {
 			m.statusMsg = fmt.Sprintf("Error creating scene: %v", err)
 			m.statusTimer = 3
 			cmds = append(cmds, statusTick())
 			break
 		}
+		m.fileLoadWords = m.editor.WordCount()
 		m.binder.RefreshPreservingExpanded()
 		m.binder.SelectPath(path)
 		m.rightPanel.markWorldDirty()
@@ -1107,4 +1188,34 @@ func statusTick() tea.Cmd {
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+// accumulateSessionWords adds any positive word-count delta since the last
+// accumulation to sessionWords, then resets fileLoadWords to the current count.
+// Call after every save and before every file switch so words are never lost.
+func (m *Model) accumulateSessionWords() {
+	current := m.editor.WordCount()
+	if delta := current - m.fileLoadWords; delta > 0 {
+		m.sessionWords += delta
+	}
+	m.fileLoadWords = current
+}
+
+// Sprint timer message and command.
+type sprintTickMsg struct{}
+
+func sprintTick() tea.Cmd {
+	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
+		return sprintTickMsg{}
+	})
+}
+
+// formatDuration formats a duration as MM:SS, clamped to zero at the bottom.
+func formatDuration(d time.Duration) string {
+	if d < 0 {
+		d = 0
+	}
+	m := int(d.Minutes())
+	s := int(d.Seconds()) % 60
+	return fmt.Sprintf("%02d:%02d", m, s)
 }
