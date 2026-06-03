@@ -463,6 +463,136 @@ func TestSearchFlowOpensScene(t *testing.T) {
 	}
 }
 
+// TestReaderOpenCloseNoScene confirms F6 with no scene open shows a status
+// message instead of activating reading mode.
+func TestReaderOpenCloseNoScene(t *testing.T) {
+	dir := twoSceneProject(t)
+	m0, err := NewModel(dir)
+	if err != nil {
+		t.Fatalf("NewModel: %v", err)
+	}
+	var m tea.Model = m0
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+
+	// F6 with no open scene should show a status message, not open reader.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF6})
+	mm := m.(Model)
+	if mm.reader.active() {
+		t.Error("reader should not activate when no scene is open")
+	}
+	if mm.statusMsg == "" {
+		t.Error("expected a status message when F6 pressed with no scene open")
+	}
+}
+
+// TestReaderOpenCloseWithScene opens a scene, activates reading mode with F6,
+// scrolls, and exits with Esc.
+func TestReaderOpenCloseWithScene(t *testing.T) {
+	dir := twoSceneProject(t)
+	m0, err := NewModel(dir)
+	if err != nil {
+		t.Fatalf("NewModel: %v", err)
+	}
+	var m tea.Model = m0
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+
+	// Open the first scene.
+	mm := m.(Model)
+	path := mm.binder.SelectedFile()
+	if path == "" {
+		t.Skip("no file selected")
+	}
+	if err := mm.editor.LoadFile(path); err != nil {
+		t.Fatalf("LoadFile: %v", err)
+	}
+	m = mm
+
+	// F6 should activate reading mode.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF6})
+	mm = m.(Model)
+	if !mm.reader.active() {
+		t.Fatal("F6 should activate reading mode when a scene is open")
+	}
+	if len(mm.reader.lines) == 0 {
+		t.Error("reader should have content lines when scene is loaded")
+	}
+
+	// Arrow keys should scroll (j = down) without exiting.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	if mm2 := m.(Model); !mm2.reader.active() {
+		t.Error("j should not exit reading mode")
+	}
+
+	// Esc should exit reading mode.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if mm2 := m.(Model); mm2.reader.active() {
+		t.Error("Esc should close reading mode")
+	}
+}
+
+// TestReaderF6ExitsReader confirms pressing F6 again while in reading mode
+// closes it (same as Esc).
+func TestReaderF6ExitsReader(t *testing.T) {
+	dir := twoSceneProject(t)
+	m0, err := NewModel(dir)
+	if err != nil {
+		t.Fatalf("NewModel: %v", err)
+	}
+	var m tea.Model = m0
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+
+	mm := m.(Model)
+	path := mm.binder.SelectedFile()
+	if path == "" {
+		t.Skip("no file selected")
+	}
+	if err := mm.editor.LoadFile(path); err != nil {
+		t.Fatalf("LoadFile: %v", err)
+	}
+	m = mm
+
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF6}) // open
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF6}) // close
+	if mm2 := m.(Model); mm2.reader.active() {
+		t.Error("second F6 should close reading mode")
+	}
+}
+
+// TestReaderOpensFromStructuralView confirms F6 opens reading mode even when a
+// structural view (corkboard) is active.
+func TestReaderOpensFromStructuralView(t *testing.T) {
+	dir := twoSceneProject(t)
+	m0, err := NewModel(dir)
+	if err != nil {
+		t.Fatalf("NewModel: %v", err)
+	}
+	var m tea.Model = m0
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+
+	// Load a scene so F6 has something to show.
+	mm := m.(Model)
+	path := mm.binder.SelectedFile()
+	if path == "" {
+		t.Skip("no file selected")
+	}
+	if err := mm.editor.LoadFile(path); err != nil {
+		t.Fatalf("LoadFile: %v", err)
+	}
+	m = mm
+
+	// Switch to corkboard.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF2})
+	if mm2 := m.(Model); mm2.viewMode != viewCorkboard {
+		t.Fatal("expected corkboard view")
+	}
+
+	// F6 should still open reading mode.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF6})
+	if mm2 := m.(Model); !mm2.reader.active() {
+		t.Error("F6 should open reading mode from structural view when scene is loaded")
+	}
+}
+
 // TestSearchOpensFromStructuralView confirms Ctrl+F works even when a structural
 // view (corkboard, outliner, timeline) is the active mode.
 func TestSearchOpensFromStructuralView(t *testing.T) {

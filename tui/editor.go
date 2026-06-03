@@ -165,6 +165,14 @@ func (m EditorModel) Content() string {
 	return m.textarea.Value()
 }
 
+// SceneTitle returns the title from the current scene's frontmatter, or "" if none open.
+func (m EditorModel) SceneTitle() string {
+	if m.scene == nil {
+		return ""
+	}
+	return m.scene.Meta.Title
+}
+
 // Notes returns the Notes metadata field of the current scene, or "" if none open.
 func (m EditorModel) Notes() string {
 	if m.scene == nil {

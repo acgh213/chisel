@@ -165,6 +165,10 @@ type Model struct {
 	// Search overlay (Phase 13). Ctrl+F opens from any state; the popup
 	// owns all keys while active and is checked before all other dispatch.
 	search searchModel
+
+	// Reading mode (Phase 14). F6 opens a full-screen centered reading view
+	// for the currently loaded scene; owns all keys while active.
+	reader readerModel
 }
 
 // NewModel creates a new chisel root model for the given project directory.
@@ -224,6 +228,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// When the search overlay is open it owns all keys.
 		if m.search.active() {
 			return m.updateSearch(msg)
+		}
+		// F6 opens reading mode from any state (not while quickNote or search is open).
+		if msg.String() == "f6" && !m.reader.active() && !m.quickNote.active() && !m.search.active() {
+			if m.editor.FilePath() != "" {
+				m.reader.open(m.editor.SceneTitle(), m.editor.Content(), m.height)
+			} else {
+				m.statusMsg = "Open a scene first to use reading mode."
+				m.statusTimer = 2
+				cmds = append(cmds, statusTick())
+			}
+			return m, tea.Batch(cmds...)
+		}
+		// When reading mode is active it owns all keys.
+		if m.reader.active() {
+			return m.updateReader(msg)
 		}
 		// When the history browser is open it owns all keys.
 		if m.showHistory {
@@ -511,6 +530,11 @@ func (m Model) View() string {
 		return "Starting..."
 	}
 
+	// Reading mode is a full-screen takeover — no binder, editor, or status bar.
+	if m.reader.active() {
+		return m.reader.view(m.width, m.height)
+	}
+
 	// Pane sizes are set in layout() on WindowSizeMsg; View only reads state.
 	var statusParts []string
 	if m.statusMsg != "" {
@@ -568,9 +592,9 @@ func (m Model) View() string {
 		}
 
 		if m.focus == PaneBinder {
-			statusParts = append(statusParts, "[Binder]  Tab=Switch  n=New  N=Folder  r=Rename  d=Delete  F2=Corkboard  F3=Outliner  F4=Timeline  F5=Panel  ^F=Search")
+			statusParts = append(statusParts, "[Binder]  Tab=Switch  n=New  N=Folder  r=Rename  d=Delete  F2=Corkboard  F3=Outliner  F4=Timeline  F5=Panel  F6=Read  ^F=Search")
 		} else {
-			statusParts = append(statusParts, "[Editor]  Tab=Switch  ^S=Save  ^N=New  F2=Corkboard  F4=Timeline  F5=Panel  ^E=Export  ^F=Search")
+			statusParts = append(statusParts, "[Editor]  Tab=Switch  ^S=Save  ^N=New  F2=Corkboard  F4=Timeline  F5=Panel  F6=Read  ^E=Export  ^F=Search")
 		}
 	}
 
@@ -705,6 +729,16 @@ func (m Model) updateQuickNote(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 	return m, cmd
+}
+
+// updateReader routes a key press to the reading mode view.
+func (m Model) updateReader(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	r, exit := m.reader.update(msg)
+	m.reader = r
+	if exit {
+		// Reading mode closed — nothing else to do, return to normal view.
+	}
+	return m, nil
 }
 
 // updateSearch routes a key press to the search overlay. On searchOpen it reads
