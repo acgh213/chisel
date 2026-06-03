@@ -14,6 +14,7 @@ const (
 	promptNewFolder            // typing a name for a new folder
 	promptRename               // typing a new name for the selected node
 	promptDelete               // y/n confirmation — no textinput, just keys
+	promptNote                 // editing the Notes metadata field of a scene
 )
 
 // binderPrompt is the inline bottom-bar input used for binder CRUD operations.
@@ -61,6 +62,12 @@ func (p binderPrompt) active() bool {
 // value returns the current textinput content.
 func (p binderPrompt) value() string {
 	return p.input.Value()
+}
+
+// setInitialValue pre-fills the input with existing text (used by promptNote to
+// show the current note so the user can edit in place).
+func (p *binderPrompt) setInitialValue(v string) {
+	p.input.SetValue(v)
 }
 
 // update forwards a message to the textinput (no-op for delete prompts).

@@ -365,6 +365,37 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					fmt.Sprintf("Delete '%s'? (y=confirm  Esc=cancel)", node.Name), "")
 			}
 
+		case "W":
+			if m.focus != PaneBinder {
+				var cmd tea.Cmd
+				m.editor, cmd = m.editor.Update(msg)
+				cmds = append(cmds, cmd)
+				break
+			}
+			if m.showRightPanel {
+				m.rightPanel.ToggleNoteMode()
+				m.syncRightPanel()
+			}
+
+		case "e":
+			if m.focus != PaneBinder {
+				var cmd tea.Cmd
+				m.editor, cmd = m.editor.Update(msg)
+				cmds = append(cmds, cmd)
+				break
+			}
+			if m.showRightPanel && m.rightPanel.noteMode {
+				path := m.binder.SelectedFile()
+				if path != "" {
+					m.prompt.open(promptNote, path, "Note:", "")
+					m.prompt.setInitialValue(m.rightPanel.currentNotes)
+				}
+			} else {
+				var cmd tea.Cmd
+				m.binder, cmd = m.binder.Update(msg)
+				cmds = append(cmds, cmd)
+			}
+
 		case "f2":
 			if err := m.enterCorkboard(); err != nil {
 				m.statusMsg = fmt.Sprintf("Error opening corkboard: %v", err)
@@ -576,7 +607,19 @@ func (m *Model) syncRightPanel() {
 	if !m.showRightPanel {
 		return
 	}
-	m.rightPanel.SyncToSelection(m.binder.SelectedFile())
+	selectedFile := m.binder.SelectedFile()
+	m.rightPanel.SyncToSelection(selectedFile)
+	// Keep scene notes in sync. Use the editor's in-memory notes when the
+	// selected file is also open in the editor; otherwise read from disk.
+	if selectedFile != "" {
+		var notes string
+		if m.editor.FilePath() == selectedFile {
+			notes = m.editor.Notes()
+		} else {
+			notes = core.ReadSceneNotes(selectedFile)
+		}
+		m.rightPanel.SyncNotes(selectedFile, notes)
+	}
 }
 
 // ensureBackend lazily opens (initializing on first use) the revision backend
@@ -947,6 +990,34 @@ func (m Model) executePrompt() (tea.Model, tea.Cmd) {
 		m.statusMsg = fmt.Sprintf("Deleted '%s'", baseName)
 		m.statusTimer = 2
 		cmds = append(cmds, statusTick())
+
+	case promptNote:
+		// ctx is the scene path. Route through the editor when the same file is
+		// open in memory — that way the note is persisted on the next Ctrl+S
+		// together with any unsaved body edits, preventing clobber.
+		if m.editor.FilePath() == ctx {
+			m.editor.SetNotes(name)
+			m.statusMsg = "Note updated — Ctrl+S to save"
+		} else {
+			sc, err := core.LoadScene(ctx)
+			if err != nil {
+				m.statusMsg = fmt.Sprintf("Error loading scene: %v", err)
+				m.statusTimer = 3
+				cmds = append(cmds, statusTick())
+				break
+			}
+			sc.Meta.Notes = name
+			if err := sc.Save(); err != nil {
+				m.statusMsg = fmt.Sprintf("Error saving note: %v", err)
+				m.statusTimer = 3
+				cmds = append(cmds, statusTick())
+				break
+			}
+			m.statusMsg = "Note saved"
+		}
+		m.statusTimer = 2
+		cmds = append(cmds, statusTick())
+		m.syncRightPanel()
 	}
 
 	return m, tea.Batch(cmds...)

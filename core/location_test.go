@@ -113,3 +113,42 @@ func TestListLocations_MissingDir(t *testing.T) {
 		t.Errorf("expected empty list for missing dir, got %d", len(locs))
 	}
 }
+
+func TestLocation_RicherFieldsRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "the-citadel.md")
+
+	l := &Location{
+		Path: path,
+		Meta: LocationMeta{
+			Name:         "The Citadel",
+			Type:         "fortress",
+			Atmosphere:   "cold, stone, echoing silence",
+			Significance: "seat of the Council's power",
+			Tags:         []string{"political"},
+		},
+		Body: "Notes.\n",
+	}
+	if err := l.Save(); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	loaded, err := LoadLocation(path)
+	if err != nil {
+		t.Fatalf("LoadLocation: %v", err)
+	}
+	if loaded.Meta.Atmosphere != "cold, stone, echoing silence" {
+		t.Errorf("Atmosphere = %q", loaded.Meta.Atmosphere)
+	}
+	if loaded.Meta.Significance != "seat of the Council's power" {
+		t.Errorf("Significance = %q", loaded.Meta.Significance)
+	}
+}
+
+func TestLocationMeta_IsEmptyWithRicherFields(t *testing.T) {
+	if (LocationMeta{Atmosphere: "misty"}).IsEmpty() {
+		t.Error("LocationMeta with Atmosphere set should not be IsEmpty()")
+	}
+	if (LocationMeta{Significance: "important"}).IsEmpty() {
+		t.Error("LocationMeta with Significance set should not be IsEmpty()")
+	}
+}

@@ -114,3 +114,49 @@ func TestListCharacters_MissingDir(t *testing.T) {
 		t.Errorf("expected empty list for missing dir, got %d", len(chars))
 	}
 }
+
+func TestCharacter_RicherFieldsRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "kira.md")
+
+	c := &Character{
+		Path: path,
+		Meta: CharacterMeta{
+			Name:          "Kira Voss",
+			Role:          "antagonist",
+			Arc:           "learns that control is an illusion",
+			Voice:         "clipped, formal, never contracts",
+			Relationships: []string{"Elara: rival", "The Council: employer"},
+			Tags:          []string{"main-cast"},
+		},
+		Body: "Notes.\n",
+	}
+	if err := c.Save(); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	loaded, err := LoadCharacter(path)
+	if err != nil {
+		t.Fatalf("LoadCharacter: %v", err)
+	}
+	if loaded.Meta.Arc != "learns that control is an illusion" {
+		t.Errorf("Arc = %q", loaded.Meta.Arc)
+	}
+	if loaded.Meta.Voice != "clipped, formal, never contracts" {
+		t.Errorf("Voice = %q", loaded.Meta.Voice)
+	}
+	if len(loaded.Meta.Relationships) != 2 || loaded.Meta.Relationships[0] != "Elara: rival" {
+		t.Errorf("Relationships = %v", loaded.Meta.Relationships)
+	}
+}
+
+func TestCharacterMeta_IsEmptyWithRicherFields(t *testing.T) {
+	if (CharacterMeta{Arc: "an arc"}).IsEmpty() {
+		t.Error("CharacterMeta with Arc set should not be IsEmpty()")
+	}
+	if (CharacterMeta{Voice: "a voice"}).IsEmpty() {
+		t.Error("CharacterMeta with Voice set should not be IsEmpty()")
+	}
+	if (CharacterMeta{Relationships: []string{"x: y"}}).IsEmpty() {
+		t.Error("CharacterMeta with Relationships set should not be IsEmpty()")
+	}
+}

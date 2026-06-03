@@ -7,19 +7,21 @@ import (
 	"strings"
 )
 
-// CharacterMeta is the YAML frontmatter for a character file. Fields are
-// deliberately minimal here; richer data (arc notes, relationships, voice)
-// is added in a later phase.
+// CharacterMeta is the YAML frontmatter for a character file.
 type CharacterMeta struct {
-	Name        string   `yaml:"name,omitempty"`
-	Role        string   `yaml:"role,omitempty"`
-	Description string   `yaml:"description,omitempty"`
-	Tags        []string `yaml:"tags,omitempty"`
+	Name          string   `yaml:"name,omitempty"`
+	Role          string   `yaml:"role,omitempty"`
+	Description   string   `yaml:"description,omitempty"`
+	Arc           string   `yaml:"arc,omitempty"`
+	Voice         string   `yaml:"voice,omitempty"`
+	Relationships []string `yaml:"relationships,omitempty"` // e.g. ["Bob: rival", "Ana: mentor"]
+	Tags          []string `yaml:"tags,omitempty"`
 }
 
 // IsEmpty reports whether the metadata carries no information.
 func (m CharacterMeta) IsEmpty() bool {
-	return m.Name == "" && m.Role == "" && m.Description == "" && len(m.Tags) == 0
+	return m.Name == "" && m.Role == "" && m.Description == "" &&
+		m.Arc == "" && m.Voice == "" && len(m.Relationships) == 0 && len(m.Tags) == 0
 }
 
 // Character is one file in the characters/ subdirectory: optional YAML
