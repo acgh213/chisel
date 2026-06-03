@@ -593,6 +593,88 @@ func TestReaderOpensFromStructuralView(t *testing.T) {
 	}
 }
 
+// TestThemeCycling cycles through all four themes with Ctrl+T and confirms the
+// model's theme field changes each press, returning to the start after four presses.
+func TestThemeCycling(t *testing.T) {
+	defer ApplyTheme("peach") // restore global state after test
+
+	dir := twoSceneProject(t)
+	m0, err := NewModel(dir)
+	if err != nil {
+		t.Fatalf("NewModel: %v", err)
+	}
+	var m tea.Model = m0
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+
+	want := []string{"forest", "ocean", "midnight", "peach"}
+	for i, expected := range want {
+		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlT})
+		mm := m.(Model)
+		if mm.theme != expected {
+			t.Errorf("after %d Ctrl+T: theme = %q, want %q", i+1, mm.theme, expected)
+		}
+	}
+}
+
+// TestSessionWordCountAccumulates opens a scene, types new words, saves, and
+// confirms sessionWords is positive.
+func TestSessionWordCountAccumulates(t *testing.T) {
+	dir := twoSceneProject(t)
+	m0, err := NewModel(dir)
+	if err != nil {
+		t.Fatalf("NewModel: %v", err)
+	}
+	var m tea.Model = m0
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+
+	// Open the first scene via Enter in the binder; openScene focuses the editor.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	mm := m.(Model)
+	if mm.editor.FilePath() == "" {
+		t.Skip("no file opened — skipping")
+	}
+
+	// Editor is already focused. Type extra words.
+	for _, r := range " extra words here" {
+		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+
+	// Save and check that session words increased.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	mm = m.(Model)
+	if mm.sessionWords <= 0 {
+		t.Errorf("sessionWords = %d after saving with new words, want > 0", mm.sessionWords)
+	}
+}
+
+// TestSprintStartStop toggles the sprint timer on and off with F7.
+func TestSprintStartStop(t *testing.T) {
+	dir := twoSceneProject(t)
+	m0, err := NewModel(dir)
+	if err != nil {
+		t.Fatalf("NewModel: %v", err)
+	}
+	var m tea.Model = m0
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+
+	// F7 should start the sprint.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF7})
+	mm := m.(Model)
+	if !mm.sprintActive {
+		t.Fatal("F7 should activate the sprint timer")
+	}
+	if mm.sprintEnd.IsZero() {
+		t.Error("sprintEnd should be set when sprint is active")
+	}
+
+	// F7 again should stop it.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF7})
+	mm = m.(Model)
+	if mm.sprintActive {
+		t.Error("second F7 should stop the sprint timer")
+	}
+}
+
 // TestSearchOpensFromStructuralView confirms Ctrl+F works even when a structural
 // view (corkboard, outliner, timeline) is the active mode.
 func TestSearchOpensFromStructuralView(t *testing.T) {
