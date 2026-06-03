@@ -27,7 +27,8 @@ Go binary (chisel)
   │   ├── character.go   — Character, CharacterMeta, LoadCharacter, ListCharacters
   │   ├── location.go    — Location, LocationMeta, LoadLocation, ListLocations
   │   ├── timeline.go    — TimelineEntry, BuildTimeline (sorted by timeline_date)
-  │   └── notes.go       — AppendScratch (append-only notes/scratch.md journal)
+  │   ├── notes.go       — AppendScratch (append-only notes/scratch.md journal)
+  │   └── search.go      — SearchResult, SearchScenes (case-insensitive full-text)
   └── tui/               — Bubble Tea presentation layer
       ├── model.go       — root model; dispatches keys, owns layout, pandoc detection
       ├── binder.go      — file tree pane (bubbles/tree over core.FileNode)
@@ -37,6 +38,7 @@ Go binary (chisel)
       ├── outliner.go    — collapsible outline view (F3)
       ├── timeline.go    — date-sorted scene list (F4)
       ├── quicknote.go   — floating quick-note popup (backtick, any state)
+      ├── search.go      — full-text search overlay (Ctrl+F, any state)
       ├── rightpanel.go  — world panel: character/location inspector, binder-driven (F5)
       ├── prompt.go      — inline prompt bar for binder CRUD
       └── styles.go      — peach color palette, shared lipgloss styles
@@ -140,17 +142,19 @@ No Python backend. No LLM. No manifest files. No system git dependency. No `os/e
 | W | Binder (right panel open) | Toggle right panel between World Index and Scene Notes |
 | e | Binder (right panel, note mode) | Edit scene note inline |
 | ` (backtick) | Any | Open quick-note popup (saves to notes/scratch.md) |
+| Ctrl+F | Any | Open full-text search overlay |
 | Ctrl+Q / Esc | Any | Quit (second press confirms if unsaved) |
 
 **In history browser:** ↑/↓ navigate snapshots, Enter show diff, `r` restore, Esc close
 **In corkboard/outliner/timeline:** ←/→/↑/↓ navigate, Enter open scene, Esc/F1 return to main, F2/F3/F4 cross-hop between structural views
 **In prompt bar:** type name then Enter to confirm, Esc to cancel (delete: y=confirm, any other key cancels)
+**In search overlay:** type query, Enter=Search; then ↑/↓ Navigate results, Enter=Open scene, Esc=Refine query
 
 ## design patterns
 
 ### view ownership
 
-When a sub-view is open, it owns all keys — the root `Update()` checks in priority order: history → structural views (corkboard/outliner) → prompt → normal dispatch. This avoids key collision bugs where Esc quits the app instead of closing the overlay.
+When a sub-view is open, it owns all keys — the root `Update()` checks in priority order: quickNote → search → history → structural views (corkboard/outliner) → prompt → normal dispatch. This avoids key collision bugs where Esc quits the app instead of closing the overlay.
 
 ### action-return pattern
 
@@ -207,10 +211,10 @@ The root model applies these actions — the sub-view never touches the root's s
 - **Phase 10:** Timeline view (F4) — `core/timeline.go`, `tui/timeline.go`; scenes sorted by `timeline_date` frontmatter; undated section; F2/F3/F4 cross-hop
 - **Phase 11:** Quick-note popup (backtick) — `core/notes.go` AppendScratch, `tui/quicknote.go`; global overlay from any state; saves to `notes/scratch.md`
 - **Phase 12:** Scene notes + richer entity sheets — `notes` frontmatter field; W toggles right panel between World Index and Scene Notes; e edits note inline; `CharacterMeta` gains Arc/Voice/Relationships; `LocationMeta` gains Atmosphere/Significance
+- **Phase 13:** Full-text search (Ctrl+F) — `core/search.go` SearchScenes (body-only, case-insensitive, skips exports/.git); `tui/search.go` overlay popup; two-phase UX: type query → Enter to search → browse results → Enter to open scene
 
-## what's coming (Phases 13–17+)
+## what's coming (Phases 14–17+)
 
-- Focus modes (typewriter scrolling, reading mode, paragraph dim) — iA Writer-inspired
 - Focus modes (typewriter scrolling, reading mode, paragraph dim) — iA Writer-inspired
 - Themes (dark/light/forest/ocean) + session word count + sprint/pomodoro timer
 - Tag browser + binder filtering

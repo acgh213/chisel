@@ -161,6 +161,10 @@ type Model struct {
 	// Quick-note popup (Phase 11). Backtick opens from any state; the popup
 	// owns all keys while active and is checked before all other dispatch.
 	quickNote quickNoteModel
+
+	// Search overlay (Phase 13). Ctrl+F opens from any state; the popup
+	// owns all keys while active and is checked before all other dispatch.
+	search searchModel
 }
 
 // NewModel creates a new chisel root model for the given project directory.
@@ -184,6 +188,7 @@ func NewModel(root string) (Model, error) {
 		prompt:     newBinderPrompt(),
 		rightPanel: newRightPanel(root),
 		quickNote:  newQuickNote(),
+		search:     newSearch(root),
 	}, nil
 }
 
@@ -202,14 +207,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		// Backtick opens the quick-note popup from any state.
-		if msg.String() == "`" && !m.quickNote.active() {
+		// Backtick opens the quick-note popup from any state (not while search is open).
+		if msg.String() == "`" && !m.quickNote.active() && !m.search.active() {
 			cmd := m.quickNote.open()
+			return m, cmd
+		}
+		// Ctrl+F opens the search overlay from any state (not while quick-note is open).
+		if msg.String() == "ctrl+f" && !m.search.active() && !m.quickNote.active() {
+			cmd := m.search.open()
 			return m, cmd
 		}
 		// When the quick-note popup is open it owns all keys.
 		if m.quickNote.active() {
 			return m.updateQuickNote(msg)
+		}
+		// When the search overlay is open it owns all keys.
+		if m.search.active() {
+			return m.updateSearch(msg)
 		}
 		// When the history browser is open it owns all keys.
 		if m.showHistory {
@@ -554,9 +568,9 @@ func (m Model) View() string {
 		}
 
 		if m.focus == PaneBinder {
-			statusParts = append(statusParts, "[Binder]  Tab=Switch  n=New  N=Folder  r=Rename  d=Delete  F2=Corkboard  F3=Outliner  F4=Timeline  F5=Panel")
+			statusParts = append(statusParts, "[Binder]  Tab=Switch  n=New  N=Folder  r=Rename  d=Delete  F2=Corkboard  F3=Outliner  F4=Timeline  F5=Panel  ^F=Search")
 		} else {
-			statusParts = append(statusParts, "[Editor]  Tab=Switch  ^S=Save  ^N=New  F2=Corkboard  F4=Timeline  F5=Panel  ^E=Export")
+			statusParts = append(statusParts, "[Editor]  Tab=Switch  ^S=Save  ^N=New  F2=Corkboard  F4=Timeline  F5=Panel  ^E=Export  ^F=Search")
 		}
 	}
 
@@ -576,6 +590,11 @@ func (m Model) View() string {
 	// Quick-note popup overlays the existing view; background content stays visible.
 	if m.quickNote.active() {
 		return m.quickNote.view(m.width, m.height, full)
+	}
+
+	// Search overlay likewise sits on top of the existing view.
+	if m.search.active() {
+		return m.search.view(m.width, m.height, full)
 	}
 
 	return full
@@ -684,6 +703,25 @@ func (m Model) updateQuickNote(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(statusTick(), cmd)
 	case quickNoteCancelled:
 		return m, cmd
+	}
+	return m, cmd
+}
+
+// updateSearch routes a key press to the search overlay. On searchOpen it reads
+// the selected path (before close clears results) then opens the scene.
+func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	s, action, cmd := m.search.update(msg)
+	m.search = s
+
+	switch action {
+	case searchOpen:
+		path := m.search.selectedPath()
+		m.search.close()
+		if path != "" {
+			return m, m.openScene(path)
+		}
+	case searchClose:
+		// already closed by search.update
 	}
 	return m, cmd
 }
