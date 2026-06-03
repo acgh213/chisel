@@ -39,6 +39,7 @@ Go binary (chisel)
       ├── timeline.go    — date-sorted scene list (F4)
       ├── quicknote.go   — floating quick-note popup (backtick, any state)
       ├── search.go      — full-text search overlay (Ctrl+F, any state)
+      ├── reader.go      — full-screen reading mode (F6, any state with open scene)
       ├── rightpanel.go  — world panel: character/location inspector, binder-driven (F5)
       ├── prompt.go      — inline prompt bar for binder CRUD
       └── styles.go      — peach color palette, shared lipgloss styles
@@ -139,6 +140,7 @@ No Python backend. No LLM. No manifest files. No system git dependency. No `os/e
 | F3 | Any | Open outliner view |
 | F4 | Any | Open timeline view (sorted by timeline_date frontmatter) |
 | F5 | Any | Toggle right panel (world panel: characters + locations) |
+| F6 | Any (scene open) | Open full-screen reading mode (word-wrapped centered column) |
 | W | Binder (right panel open) | Toggle right panel between World Index and Scene Notes |
 | e | Binder (right panel, note mode) | Edit scene note inline |
 | ` (backtick) | Any | Open quick-note popup (saves to notes/scratch.md) |
@@ -149,12 +151,13 @@ No Python backend. No LLM. No manifest files. No system git dependency. No `os/e
 **In corkboard/outliner/timeline:** ←/→/↑/↓ navigate, Enter open scene, Esc/F1 return to main, F2/F3/F4 cross-hop between structural views
 **In prompt bar:** type name then Enter to confirm, Esc to cancel (delete: y=confirm, any other key cancels)
 **In search overlay:** type query, Enter=Search; then ↑/↓ Navigate results, Enter=Open scene, Esc=Refine query
+**In reading mode:** ↑/↓/j/k Scroll, Ctrl+D/U half-page, F6/Esc=Exit
 
 ## design patterns
 
 ### view ownership
 
-When a sub-view is open, it owns all keys — the root `Update()` checks in priority order: quickNote → search → history → structural views (corkboard/outliner) → prompt → normal dispatch. This avoids key collision bugs where Esc quits the app instead of closing the overlay.
+When a sub-view is open, it owns all keys — the root `Update()` checks in priority order: quickNote → search → reader → history → structural views (corkboard/outliner) → prompt → normal dispatch. This avoids key collision bugs where Esc quits the app instead of closing the overlay.
 
 ### action-return pattern
 
@@ -212,10 +215,11 @@ The root model applies these actions — the sub-view never touches the root's s
 - **Phase 11:** Quick-note popup (backtick) — `core/notes.go` AppendScratch, `tui/quicknote.go`; global overlay from any state; saves to `notes/scratch.md`
 - **Phase 12:** Scene notes + richer entity sheets — `notes` frontmatter field; W toggles right panel between World Index and Scene Notes; e edits note inline; `CharacterMeta` gains Arc/Voice/Relationships; `LocationMeta` gains Atmosphere/Significance
 - **Phase 13:** Full-text search (Ctrl+F) — `core/search.go` SearchScenes (body-only, case-insensitive, skips exports/.git); `tui/search.go` overlay popup; two-phase UX: type query → Enter to search → browse results → Enter to open scene
+- **Phase 14:** Reading mode (F6) — `tui/reader.go` full-screen centered column; word-wrapped prose; ↑/↓/j/k scroll; F6/Esc exits. Typewriter centering and paragraph dim deferred: bubbles/textarea has no scroll-offset setter and no per-line styling hook.
 
-## what's coming (Phases 14–17+)
+## what's coming (Phases 15–17+)
 
-- Focus modes (typewriter scrolling, reading mode, paragraph dim) — iA Writer-inspired
+- Typewriter centering + paragraph dim — requires bubbles/textarea fork or replacement (no scroll-offset API, no per-line styling hook)
 - Themes (dark/light/forest/ocean) + session word count + sprint/pomodoro timer
 - Tag browser + binder filtering
 - Project statistics (ASCII word-count-per-day chart from git history)
