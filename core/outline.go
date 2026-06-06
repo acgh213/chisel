@@ -71,8 +71,10 @@ func FolderScenes(dir string) ([]SceneInfo, error) {
 }
 
 // SortScenesForReading orders scenes by draft_order (explicit orders first,
-// ascending), falling back to case-insensitive name. It sorts in place. The
-// same ordering will drive compile/export later, so it lives in one place.
+// ascending), falling back to case-insensitive name. It sorts in place.
+//
+// draft_order: 0 is treated as "unset" (zero is the YAML default). Use
+// draft_order: 1 or higher for explicitly ordered scenes.
 func SortScenesForReading(infos []SceneInfo) {
 	sort.SliceStable(infos, func(i, j int) bool {
 		a, b := infos[i], infos[j]

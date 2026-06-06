@@ -38,8 +38,7 @@ type Metadata struct {
 	DraftOrder int        `yaml:"draft_order,omitempty"`
 	WordTarget int        `yaml:"word_target,omitempty"`
 	POV        string     `yaml:"pov,omitempty"`
-	WordCount    int        `yaml:"word_count,omitempty"`
-	Created      *time.Time `yaml:"created,omitempty"`
+	Created    *time.Time `yaml:"created,omitempty"`
 	Modified     *time.Time `yaml:"modified,omitempty"`
 	TimelineDate *time.Time `yaml:"timeline_date,omitempty"`
 	Notes        string     `yaml:"notes,omitempty"`
@@ -55,7 +54,6 @@ func (m Metadata) IsEmpty() bool {
 		m.DraftOrder == 0 &&
 		m.WordTarget == 0 &&
 		m.POV == "" &&
-		m.WordCount == 0 &&
 		m.Created == nil &&
 		m.Modified == nil &&
 		m.TimelineDate == nil &&

@@ -80,6 +80,41 @@ func TestExport_EmptyProject(t *testing.T) {
 	}
 }
 
+func TestExport_ExcludesWorldBuildingDirs(t *testing.T) {
+	root := t.TempDir()
+	writeScene(t, root, "scene.md", "Prose content.\n")
+
+	// Characters, locations, and notes must NOT appear in the manuscript.
+	charsDir := filepath.Join(root, "characters")
+	locsDir := filepath.Join(root, "locations")
+	notesDir := filepath.Join(root, "notes")
+	for _, d := range []string{charsDir, locsDir, notesDir} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeScene(t, charsDir, "hero.md", "---\nname: Hero\n---\nCharacter sheet.\n")
+	writeScene(t, locsDir, "castle.md", "---\nname: Castle\n---\nLocation notes.\n")
+	writeScene(t, notesDir, "scratch.md", "Research notes.\n")
+
+	result, err := NewProject(root).Export("")
+	if err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+
+	data, _ := os.ReadFile(result.MarkdownPath)
+	content := string(data)
+
+	for _, unexpected := range []string{"Character sheet.", "Location notes.", "Research notes."} {
+		if strings.Contains(content, unexpected) {
+			t.Errorf("manuscript contains world-building content %q:\n%s", unexpected, content)
+		}
+	}
+	if !strings.Contains(content, "Prose content.") {
+		t.Errorf("manuscript missing expected scene content:\n%s", content)
+	}
+}
+
 func TestExport_WritesMarkdownPath(t *testing.T) {
 	root := t.TempDir()
 	writeScene(t, root, "ch1.md", "---\ndraft_order: 1\n---\nChapter one.\n")

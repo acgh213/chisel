@@ -254,9 +254,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.editor.FilePath() != "" {
 				m.reader.open(m.editor.SceneTitle(), m.editor.Content(), m.height)
 			} else {
-				m.statusMsg = "Open a scene first to use reading mode."
-				m.statusTimer = 2
-				cmds = append(cmds, statusTick())
+				cmds = append(cmds, m.setStatus("Open a scene first to use reading mode.", 2))
 			}
 			return m, tea.Batch(cmds...)
 		}
@@ -304,9 +302,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+q", "esc":
 			if m.editor.IsModified() && !wasPending {
 				m.pendingQuit = true
-				m.statusMsg = "Unsaved changes! Press Ctrl+Q again to quit without saving."
-				m.statusTimer = 3
-				cmds = append(cmds, statusTick())
+				cmds = append(cmds, m.setStatus("Unsaved changes! Press Ctrl+Q again to quit without saving.", 3))
 				return m, tea.Batch(cmds...)
 			}
 			m.quitting = true
@@ -373,22 +369,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.statusTimer = 3
 				cmds = append(cmds, statusTick())
 			} else {
-				m.statusMsg = "No file open to save."
-				m.statusTimer = 2
-				cmds = append(cmds, statusTick())
+				cmds = append(cmds, m.setStatus("No file open to save.", 2))
 			}
 
 		case "ctrl+h":
 			if m.editor.FilePath() != "" {
 				if err := m.openHistory(); err != nil {
-					m.statusMsg = fmt.Sprintf("Error opening history: %v", err)
-					m.statusTimer = 3
-					cmds = append(cmds, statusTick())
+					cmds = append(cmds, m.setStatus(fmt.Sprintf("Error opening history: %v", err), 3))
 				}
 			} else {
-				m.statusMsg = "Open a scene first to view its history."
-				m.statusTimer = 2
-				cmds = append(cmds, statusTick())
+				cmds = append(cmds, m.setStatus("Open a scene first to view its history.", 2))
 			}
 
 		case "ctrl+n", "n":
@@ -469,23 +459,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "f2":
 			if err := m.enterCorkboard(); err != nil {
-				m.statusMsg = fmt.Sprintf("Error opening corkboard: %v", err)
-				m.statusTimer = 3
-				cmds = append(cmds, statusTick())
+				cmds = append(cmds, m.setStatus(fmt.Sprintf("Error opening corkboard: %v", err), 3))
 			}
 
 		case "f3":
 			if err := m.enterOutliner(); err != nil {
-				m.statusMsg = fmt.Sprintf("Error opening outliner: %v", err)
-				m.statusTimer = 3
-				cmds = append(cmds, statusTick())
+				cmds = append(cmds, m.setStatus(fmt.Sprintf("Error opening outliner: %v", err), 3))
 			}
 
 		case "f4":
 			if err := m.enterTimeline(); err != nil {
-				m.statusMsg = fmt.Sprintf("Error opening timeline: %v", err)
-				m.statusTimer = 3
-				cmds = append(cmds, statusTick())
+				cmds = append(cmds, m.setStatus(fmt.Sprintf("Error opening timeline: %v", err), 3))
 			}
 
 		case "f5":
@@ -516,9 +500,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.editor.RefreshStyles()
 			m.config.Theme = m.theme
 			_ = core.SaveConfig(m.root, m.config)
-			m.statusMsg = fmt.Sprintf("Theme: %s", m.theme)
-			m.statusTimer = 2
-			cmds = append(cmds, statusTick())
+			cmds = append(cmds, m.setStatus(fmt.Sprintf("Theme: %s", m.theme), 2))
 
 		default:
 			// Safety net: any key without an explicit case above is forwarded
@@ -545,6 +527,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.layout()
+		if m.reader.active() {
+			m.reader.setHeight(m.height)
+		}
 		return m, nil
 
 	case statusTickMsg:
@@ -699,6 +684,15 @@ func (m Model) View() string {
 	return full
 }
 
+// fullHeight returns the usable height above the status bar, floored at 1.
+func (m Model) fullHeight() int {
+	h := m.height - 1
+	if h < 1 {
+		return 1
+	}
+	return h
+}
+
 // layout recalculates pane sizes after a window resize or panel toggle. It is
 // the single place that pushes sizes into the panes.
 func (m *Model) layout() {
@@ -708,10 +702,7 @@ func (m *Model) layout() {
 	m.rightPanel.SetSize(l.rightPanelW, l.paneH)
 	// The history browser and the structural views all take the full width
 	// above the status bar.
-	fullH := m.height - 1
-	if fullH < 1 {
-		fullH = 1
-	}
+	fullH := m.fullHeight()
 	m.history.SetSize(m.width, fullH)
 	m.corkboard.SetSize(m.width, fullH)
 	m.outliner.SetSize(m.width, fullH)
@@ -774,11 +765,7 @@ func (m *Model) openHistory() error {
 	if err := m.history.open(backend, path, name); err != nil {
 		return err
 	}
-	histH := m.height - 1
-	if histH < 1 {
-		histH = 1
-	}
-	m.history.SetSize(m.width, histH)
+	m.history.SetSize(m.width, m.fullHeight())
 	m.showHistory = true
 	return nil
 }
@@ -808,11 +795,7 @@ func (m Model) updateQuickNote(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // updateReader routes a key press to the reading mode view.
 func (m Model) updateReader(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	r, exit := m.reader.update(msg)
-	m.reader = r
-	if exit {
-		// Reading mode closed — nothing else to do, return to normal view.
-	}
+	m.reader, _ = m.reader.update(msg)
 	return m, nil
 }
 
@@ -879,18 +862,14 @@ func (m Model) updateHistory(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *Model) openScene(path string) tea.Cmd {
 	if m.editor.IsModified() {
 		if err := m.editor.Save(); err != nil {
-			m.statusMsg = fmt.Sprintf("Error saving: %v", err)
-			m.statusTimer = 3
-			return statusTick()
+			return m.setStatus(fmt.Sprintf("Error saving: %v", err), 3)
 		}
 	}
 	// Accumulate words from the file being left (after any auto-save above),
 	// then load the new file and reset the baseline.
 	m.accumulateSessionWords()
 	if err := m.editor.LoadFile(path); err != nil {
-		m.statusMsg = fmt.Sprintf("Error opening: %v", err)
-		m.statusTimer = 3
-		return statusTick()
+		return m.setStatus(fmt.Sprintf("Error opening: %v", err), 3)
 	}
 	m.fileLoadWords = m.editor.WordCount()
 	m.viewMode = viewMain
@@ -912,11 +891,7 @@ func (m *Model) enterCorkboard() error {
 	if err := m.corkboard.open(dir, name); err != nil {
 		return err
 	}
-	fullH := m.height - 1
-	if fullH < 1 {
-		fullH = 1
-	}
-	m.corkboard.SetSize(m.width, fullH)
+	m.corkboard.SetSize(m.width, m.fullHeight())
 	m.viewMode = viewCorkboard
 	return nil
 }
@@ -926,11 +901,7 @@ func (m *Model) enterOutliner() error {
 	if err := m.outliner.open(m.root); err != nil {
 		return err
 	}
-	fullH := m.height - 1
-	if fullH < 1 {
-		fullH = 1
-	}
-	m.outliner.SetSize(m.width, fullH)
+	m.outliner.SetSize(m.width, m.fullHeight())
 	m.viewMode = viewOutliner
 	return nil
 }
@@ -940,11 +911,7 @@ func (m *Model) enterTimeline() error {
 	if err := m.timeline.open(m.root); err != nil {
 		return err
 	}
-	fullH := m.height - 1
-	if fullH < 1 {
-		fullH = 1
-	}
-	m.timeline.SetSize(m.width, fullH)
+	m.timeline.SetSize(m.width, m.fullHeight())
 	m.viewMode = viewTimeline
 	return nil
 }
@@ -959,23 +926,17 @@ func (m Model) updateView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "f2":
 		if err := m.enterCorkboard(); err != nil {
-			m.statusMsg = fmt.Sprintf("Error opening corkboard: %v", err)
-			m.statusTimer = 3
-			return m, statusTick()
+			return m, m.setStatus(fmt.Sprintf("Error opening corkboard: %v", err), 3)
 		}
 		return m, nil
 	case "f3":
 		if err := m.enterOutliner(); err != nil {
-			m.statusMsg = fmt.Sprintf("Error opening outliner: %v", err)
-			m.statusTimer = 3
-			return m, statusTick()
+			return m, m.setStatus(fmt.Sprintf("Error opening outliner: %v", err), 3)
 		}
 		return m, nil
 	case "f4":
 		if err := m.enterTimeline(); err != nil {
-			m.statusMsg = fmt.Sprintf("Error opening timeline: %v", err)
-			m.statusTimer = 3
-			return m, statusTick()
+			return m, m.setStatus(fmt.Sprintf("Error opening timeline: %v", err), 3)
 		}
 		return m, nil
 	}
@@ -1044,28 +1005,20 @@ func (m Model) executePrompt() (tea.Model, tea.Cmd) {
 	switch mode {
 	case promptNewFile:
 		if name == "" {
-			m.statusMsg = "Name cannot be empty."
-			m.statusTimer = 2
-			return m, tea.Batch(append(cmds, statusTick())...)
+			return m, m.setStatus("Name cannot be empty.", 2)
 		}
 		path := filepath.Join(ctx, name+".md")
 		if fileExists(path) {
-			m.statusMsg = fmt.Sprintf("'%s.md' already exists.", name)
-			m.statusTimer = 3
-			return m, tea.Batch(append(cmds, statusTick())...)
+			return m, m.setStatus(fmt.Sprintf("'%s.md' already exists.", name), 3)
 		}
 		if m.editor.IsModified() {
 			if err := m.editor.Save(); err != nil {
-				m.statusMsg = fmt.Sprintf("Error saving: %v", err)
-				m.statusTimer = 3
-				return m, tea.Batch(statusTick())
+				return m, m.setStatus(fmt.Sprintf("Error saving: %v", err), 3)
 			}
 		}
 		m.accumulateSessionWords()
 		if err := m.editor.NewScene(path); err != nil {
-			m.statusMsg = fmt.Sprintf("Error creating scene: %v", err)
-			m.statusTimer = 3
-			cmds = append(cmds, statusTick())
+			cmds = append(cmds, m.setStatus(fmt.Sprintf("Error creating scene: %v", err), 3))
 			break
 		}
 		m.fileLoadWords = m.editor.WordCount()
@@ -1076,42 +1029,30 @@ func (m Model) executePrompt() (tea.Model, tea.Cmd) {
 		m.focus = PaneEditor
 		m.binder.Focus(false)
 		m.editor.Focus(true)
-		m.statusMsg = fmt.Sprintf("Created '%s.md'", name)
-		m.statusTimer = 2
-		cmds = append(cmds, statusTick(), m.editor.Init())
+		cmds = append(cmds, m.setStatus(fmt.Sprintf("Created '%s.md'", name), 2), m.editor.Init())
 
 	case promptNewFolder:
 		if name == "" {
-			m.statusMsg = "Name cannot be empty."
-			m.statusTimer = 2
-			return m, tea.Batch(append(cmds, statusTick())...)
+			return m, m.setStatus("Name cannot be empty.", 2)
 		}
 		newPath, err := core.CreateFolder(ctx, name)
 		if err != nil {
-			m.statusMsg = fmt.Sprintf("Error creating folder: %v", err)
-			m.statusTimer = 3
-			cmds = append(cmds, statusTick())
+			cmds = append(cmds, m.setStatus(fmt.Sprintf("Error creating folder: %v", err), 3))
 			break
 		}
 		m.binder.RefreshPreservingExpanded()
 		m.binder.SelectPath(newPath)
 		m.rightPanel.markWorldDirty()
 		m.syncRightPanel()
-		m.statusMsg = fmt.Sprintf("Created folder '%s'", name)
-		m.statusTimer = 2
-		cmds = append(cmds, statusTick())
+		cmds = append(cmds, m.setStatus(fmt.Sprintf("Created folder '%s'", name), 2))
 
 	case promptRename:
 		if name == "" {
-			m.statusMsg = "Name cannot be empty."
-			m.statusTimer = 2
-			return m, tea.Batch(append(cmds, statusTick())...)
+			return m, m.setStatus("Name cannot be empty.", 2)
 		}
 		newPath, err := core.RenameNode(ctx, name)
 		if err != nil {
-			m.statusMsg = fmt.Sprintf("Error renaming: %v", err)
-			m.statusTimer = 3
-			cmds = append(cmds, statusTick())
+			cmds = append(cmds, m.setStatus(fmt.Sprintf("Error renaming: %v", err), 3))
 			break
 		}
 		if m.editor.FilePath() == ctx {
@@ -1121,16 +1062,12 @@ func (m Model) executePrompt() (tea.Model, tea.Cmd) {
 		m.binder.SelectPath(newPath)
 		m.rightPanel.markWorldDirty()
 		m.syncRightPanel()
-		m.statusMsg = fmt.Sprintf("Renamed to '%s'", filepath.Base(newPath))
-		m.statusTimer = 2
-		cmds = append(cmds, statusTick())
+		cmds = append(cmds, m.setStatus(fmt.Sprintf("Renamed to '%s'", filepath.Base(newPath)), 2))
 
 	case promptDelete:
 		baseName := filepath.Base(ctx)
 		if err := core.DeleteNode(ctx); err != nil {
-			m.statusMsg = fmt.Sprintf("Error deleting: %v", err)
-			m.statusTimer = 3
-			cmds = append(cmds, statusTick())
+			cmds = append(cmds, m.setStatus(fmt.Sprintf("Error deleting: %v", err), 3))
 			break
 		}
 		// Clear the editor if the open file (or a file inside a deleted folder) is gone.
@@ -1140,9 +1077,7 @@ func (m Model) executePrompt() (tea.Model, tea.Cmd) {
 		m.binder.RefreshPreservingExpanded()
 		m.rightPanel.markWorldDirty()
 		m.syncRightPanel()
-		m.statusMsg = fmt.Sprintf("Deleted '%s'", baseName)
-		m.statusTimer = 2
-		cmds = append(cmds, statusTick())
+		cmds = append(cmds, m.setStatus(fmt.Sprintf("Deleted '%s'", baseName), 2))
 
 	case promptNote:
 		// ctx is the scene path. Route through the editor when the same file is
@@ -1150,30 +1085,33 @@ func (m Model) executePrompt() (tea.Model, tea.Cmd) {
 		// together with any unsaved body edits, preventing clobber.
 		if m.editor.FilePath() == ctx {
 			m.editor.SetNotes(name)
-			m.statusMsg = "Note updated — Ctrl+S to save"
+			cmds = append(cmds, m.setStatus("Note updated — Ctrl+S to save", 2))
 		} else {
 			sc, err := core.LoadScene(ctx)
 			if err != nil {
-				m.statusMsg = fmt.Sprintf("Error loading scene: %v", err)
-				m.statusTimer = 3
-				cmds = append(cmds, statusTick())
+				cmds = append(cmds, m.setStatus(fmt.Sprintf("Error loading scene: %v", err), 3))
 				break
 			}
 			sc.Meta.Notes = name
 			if err := sc.Save(); err != nil {
-				m.statusMsg = fmt.Sprintf("Error saving note: %v", err)
-				m.statusTimer = 3
-				cmds = append(cmds, statusTick())
+				cmds = append(cmds, m.setStatus(fmt.Sprintf("Error saving note: %v", err), 3))
 				break
 			}
-			m.statusMsg = "Note saved"
+			cmds = append(cmds, m.setStatus("Note saved", 2))
 		}
-		m.statusTimer = 2
-		cmds = append(cmds, statusTick())
 		m.syncRightPanel()
 	}
 
 	return m, tea.Batch(cmds...)
+}
+
+// setStatus sets a timed status-bar message and returns the tick command to
+// start the countdown. secs is the display duration in seconds (2 = info,
+// 3 = error, 4–5 = restore/sprint).
+func (m *Model) setStatus(msg string, secs int) tea.Cmd {
+	m.statusMsg = msg
+	m.statusTimer = secs
+	return statusTick()
 }
 
 // Custom message types.

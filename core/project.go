@@ -60,6 +60,38 @@ func Flatten(nodes []*FileNode, out *[]*FileNode) {
 	}
 }
 
+// walkMarkdown calls fn for every .md scene file under root, skipping hidden
+// entries and directories reserved for non-scene content (exports, characters,
+// locations, notes). This is the shared walk primitive for export, timeline, and
+// any future whole-project scene enumerations.
+func walkMarkdown(root string, fn func(path string) error) error {
+	skipDirs := map[string]bool{
+		"exports":    true,
+		"characters": true,
+		"locations":  true,
+		"notes":      true,
+	}
+	return filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil // skip unreadable entries
+		}
+		name := d.Name()
+		if len(name) > 0 && name[0] == '.' {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.IsDir() && skipDirs[name] {
+			return filepath.SkipDir
+		}
+		if !d.IsDir() && filepath.Ext(name) == ".md" {
+			return fn(path)
+		}
+		return nil
+	})
+}
+
 // buildFileTree recursively scans dir and builds the FileNode tree. Directories
 // come before files; both are sorted case-insensitively.
 func buildFileTree(dir string, depth int) ([]*FileNode, error) {

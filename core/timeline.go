@@ -1,7 +1,6 @@
 package core
 
 import (
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -19,42 +18,18 @@ type TimelineEntry struct {
 	WordCount    int
 }
 
-// BuildTimeline walks the whole project tree (excluding exports/ and hidden
-// files/directories) and returns scenes sorted for the timeline view: dated
-// entries first in ascending TimelineDate order, then undated entries sorted
-// case-insensitively by title.
+// BuildTimeline walks the whole project tree (excluding exports/, characters/,
+// locations/, notes/, and hidden entries) and returns scenes sorted for the
+// timeline view: dated entries first in ascending TimelineDate order, then
+// undated entries sorted case-insensitively by title.
 func BuildTimeline(root string) ([]TimelineEntry, error) {
 	var entries []TimelineEntry
 
-	err := filepath.WalkDir(root, func(path string, d os.DirEntry, werr error) error {
-		if werr != nil {
-			return nil // skip unreadable entries
-		}
-		name := d.Name()
-		if len(name) > 0 && name[0] == '.' {
-			if d.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if d.IsDir() {
-			if name == "exports" {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if filepath.Ext(name) != ".md" {
-			return nil
-		}
+	err := walkMarkdown(root, func(path string) error {
+		base := strings.TrimSuffix(filepath.Base(path), ".md")
+		entry := TimelineEntry{Path: path, Title: base}
 
-		base := strings.TrimSuffix(name, ".md")
-		entry := TimelineEntry{
-			Path:  path,
-			Title: base,
-		}
-
-		sc, err := LoadScene(path)
-		if err == nil {
+		if sc, err := LoadScene(path); err == nil {
 			if sc.Meta.Title != "" {
 				entry.Title = sc.Meta.Title
 			}

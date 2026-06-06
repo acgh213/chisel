@@ -675,6 +675,85 @@ func TestSprintStartStop(t *testing.T) {
 	}
 }
 
+// TestReaderResizeUpdatesVisible confirms that a WindowSizeMsg while reading mode
+// is active recomputes r.visible so lines don't overflow or under-fill.
+func TestReaderResizeUpdatesVisible(t *testing.T) {
+	dir := twoSceneProject(t)
+	m0, err := NewModel(dir)
+	if err != nil {
+		t.Fatalf("NewModel: %v", err)
+	}
+	var m tea.Model = m0
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+
+	// Open a scene.
+	mm := m.(Model)
+	path := mm.binder.SelectedFile()
+	if path == "" {
+		t.Skip("no file selected")
+	}
+	if err := mm.editor.LoadFile(path); err != nil {
+		t.Fatalf("LoadFile: %v", err)
+	}
+	m = mm
+
+	// Open reader at height 40.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF6})
+	mm = m.(Model)
+	if !mm.reader.active() {
+		t.Fatal("reader should be active after F6")
+	}
+	visibleAt40 := mm.reader.visible
+
+	// Resize to height 20 — visible should shrink.
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 20})
+	mm = m.(Model)
+	if mm.reader.visible >= visibleAt40 {
+		t.Errorf("reader.visible did not shrink after terminal height reduced: was %d at h=40, got %d at h=20",
+			visibleAt40, mm.reader.visible)
+	}
+
+	// Resize back to 40 — visible should return.
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	mm = m.(Model)
+	if mm.reader.visible != visibleAt40 {
+		t.Errorf("reader.visible after growing back: got %d, want %d", mm.reader.visible, visibleAt40)
+	}
+}
+
+// TestSprintTimerExpiry sends a sprintTickMsg that arrives after the end time
+// and confirms the sprint is stopped with a status message.
+func TestSprintTimerExpiry(t *testing.T) {
+	dir := twoSceneProject(t)
+	m0, err := NewModel(dir)
+	if err != nil {
+		t.Fatalf("NewModel: %v", err)
+	}
+	var m tea.Model = m0
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+
+	// Start sprint.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF7})
+	mm := m.(Model)
+	if !mm.sprintActive {
+		t.Fatal("sprint should be active after F7")
+	}
+
+	// Move sprintEnd into the past so the next tick fires expiry.
+	mm.sprintEnd = mm.sprintEnd.Add(-26 * 60 * 1e9) // subtract 26 minutes
+	m = mm
+
+	// Deliver a sprintTickMsg — model should stop the sprint.
+	m, _ = m.Update(sprintTickMsg{})
+	mm = m.(Model)
+	if mm.sprintActive {
+		t.Error("sprint should be inactive after expiry tick")
+	}
+	if !strings.Contains(mm.statusMsg, "Sprint done") {
+		t.Errorf("expected 'Sprint done' status after expiry, got %q", mm.statusMsg)
+	}
+}
+
 // TestSearchOpensFromStructuralView confirms Ctrl+F works even when a structural
 // view (corkboard, outliner, timeline) is the active mode.
 func TestSearchOpensFromStructuralView(t *testing.T) {
