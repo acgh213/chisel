@@ -41,16 +41,28 @@ Files: `tui/model.go`, `tui/binder.go`, `tui/editor.go`, `tui/corkboard.go`, `tu
 
 Sub-views that return `string` from internal `view()` helpers (e.g. `promptModel.view()`, `binderModel.View()` called from `model.go`) are fine — only the Bubble Tea interface method `View()` needs updating.
 
-### 2. `tea.WithAltScreen()` removed — `main.go` + `model.go`
+### 2. `tea.WithAltScreen()` removed + `tea.NewProgram` now returns error — `main.go` + `model.go`
 
-`tea.WithAltScreen()` is no longer a program option. Alt screen is declared per-frame in `View()`.
+`tea.WithAltScreen()` is no longer a program option. Alt screen is declared per-frame in `View()`. Additionally, `tea.NewProgram` now returns `(*tea.Program, error)` — a second return value that v1 did not have.
 
 ```go
 // main.go — Before
 p := tea.NewProgram(model, tea.WithAltScreen())
+if _, err := p.Run(); err != nil { ... }
 
 // main.go — After
-p := tea.NewProgram(model)
+p, err := tea.NewProgram(model)
+if err != nil {
+    fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+    os.Exit(1)
+}
+if _, err := p.Run(); err != nil { ... }
+```
+
+Alternatively, use `tea.MustNewProgram(model)` for the single-expression form (panics on error, consistent with the existing pattern in `launchTUI`):
+
+```go
+p := tea.MustNewProgram(model)
 ```
 
 ```go
@@ -63,7 +75,7 @@ func (m Model) View() tea.View {
 }
 ```
 
-### 3. Key message type — `tui/model.go`
+### 3. Key message types — `tui/model.go`
 
 `tea.KeyMsg` becomes an interface; the concrete press type is `tea.KeyPressMsg`. The `.String()` method is preserved, so all existing `switch msg.String()` / `case "ctrl+s":` dispatch continues to work unchanged.
 
@@ -77,7 +89,13 @@ case tea.KeyPressMsg:
 
 One change in `model.go`. All helper methods (`updateQuickNote`, `updateReader`, etc.) that accept `tea.KeyMsg` also change their parameter type to `tea.KeyPressMsg`.
 
-### 4. `textarea` style fields — `tui/editor.go`
+v2 also delivers `tea.KeyReleaseMsg` to `Update()`. chisel has no use for key release events yet — they fall through to the default case safely. No handling needed now; `#56` will use `key.IsRepeat` from `KeyPressMsg` for hold-to-repeat in reader mode, not `KeyReleaseMsg`.
+
+### 4. `tea.Quit` — `tui/model.go`
+
+In v2, `tea.Quit` is a struct value, not a `Cmd` variable. `tea.Quit()` with call parens would not compile. chisel's single usage at `model.go:310` already uses the correct form (`return m, tea.Quit` — no parens), so **no change required**. Note this for any future code additions.
+
+### 5. `textarea` style fields — `tui/editor.go`
 
 The textarea `Styles` struct is reorganized. Old top-level fields move into a nested `Styles` struct:
 
@@ -111,7 +129,7 @@ ta.SetStyles(s)
 
 The same getter/setter pattern applies wherever `rebuildStyles()` in `tui/styles.go` touches textarea style fields (check `tui/styles.go` for any direct textarea references).
 
-### 5. `textinput` width and styles — `tui/quicknote.go`, `tui/search.go`
+### 6. `textinput` width and styles — `tui/quicknote.go`, `tui/search.go`
 
 Width is now a setter method rather than a field:
 
@@ -127,7 +145,7 @@ ti.SetWidth(searchPopupW - 4)
 
 Style fields follow the same nested struct pattern as textarea above (check after compilation errors — only touch what the compiler flags).
 
-### 6. Import path sweep — all TUI files + `main.go`
+### 7. Import path sweep — all TUI files + `main.go`
 
 Every file that imports a Charm package needs its import path updated:
 
@@ -147,9 +165,9 @@ tea "charm.land/bubbletea/v2"
 
 Files: `main.go`, `tui/model.go`, `tui/binder.go`, `tui/editor.go`, `tui/corkboard.go`, `tui/outliner.go`, `tui/timeline.go`, `tui/history.go`, `tui/search.go`, `tui/quicknote.go`, `tui/reader.go`, `tui/rightpanel.go`, `tui/prompt.go`, `tui/styles.go`, and test files.
 
-### 7. `go.mod` update
+### 8. `go.mod` update
 
-Run in order:
+Run **after** the import path sweep (see implementation order — `go mod tidy` before the sweep drops the v2 packages because nothing imports them yet):
 
 ```sh
 go get charm.land/bubbletea/v2@v2.0.7
@@ -158,13 +176,14 @@ go get charm.land/bubbles/v2@v2.1.0
 go mod tidy
 ```
 
-Then remove the old `github.com/charmbracelet/*` entries manually if `go mod tidy` doesn't drop them automatically (they will have no importers after the import sweep).
+`go mod tidy` will remove the old `github.com/charmbracelet/*` entries automatically once no files import them. The `go.sum` entries for the old packages drop at the same time — no manual cleanup needed. Run `go mod tidy` a second time if any stale entries remain.
 
 ## What does NOT change
 
 - `tea.WindowSizeMsg` — still exists in v2, received the same way. All test helpers that send `tea.WindowSizeMsg{Width: ..., Height: ...}` continue to work.
 - `lipgloss` layout API — `JoinHorizontal`, `JoinVertical`, `lipgloss.Color`, `lipgloss.NewStyle()` are unchanged in v2. The import path changes but the API does not.
 - Key dispatch logic — all `switch msg.String()` / `case "ctrl+s":` chains continue to work because `KeyPressMsg.String()` works identically to the old `KeyMsg.String()`.
+- `tea.Cmd` / `Init()` — `tea.Cmd` is the same type in v2. All `Init()` return signatures and `Cmd` composition (`tea.Batch`, etc.) are unchanged.
 - `core/` — zero changes. `core/` has no Charm imports; the hard rule is preserved.
 - Sprint timer tick — `tea.Tick(time.Second, ...)` is unchanged.
 
@@ -172,12 +191,20 @@ Then remove the old `github.com/charmbracelet/*` entries manually if `go mod tid
 
 Tests that call `m.View()` and check the result as a string will need updating: `View()` now returns `tea.View` not `string`. The rendered content is accessed via `tea.NewView(s)` — check whether test assertions should call `.String()` on the returned value or whether there's a v2 idiom for this. Compile errors will surface these directly; no need to preemptively audit.
 
+## Pre-migration checklist
+
+- [ ] On a fresh branch off main with no uncommitted changes
+- [ ] `grep -r 'charmbracelet' tui/ main.go` lists the expected files only (no surprises)
+- [ ] `go list -m all | grep charmbracelet` shows current v1 packages before starting
+
 ## Implementation order
 
-1. Update `go.mod` — run `go get` for all three packages, then `go mod tidy`
-2. Import path sweep — find-replace across all `.go` files in `tui/` and `main.go`
+The import sweep must happen **before** `go mod tidy` — `go mod tidy` would drop the newly-added v2 packages if no file imports them yet.
+
+1. Import path sweep — find-replace `github.com/charmbracelet/bubbletea` → `charm.land/bubbletea/v2`, `github.com/charmbracelet/lipgloss` → `charm.land/lipgloss/v2`, and `github.com/charmbracelet/bubbles/` → `charm.land/bubbles/v2/` across all `.go` files in `tui/`, `main.go`, and test files
+2. `go.mod` — run `go get` for all three v2 packages, then `go mod tidy` (drops old v1 entries + stale `go.sum` entries automatically)
 3. `View()` signatures — change return types and wrap with `tea.NewView()`
-4. `main.go` — remove `tea.WithAltScreen()`, add `v.AltScreen = true` in `Model.View()`
+4. `main.go` — remove `tea.WithAltScreen()`, use `tea.MustNewProgram(model)` or `p, err := tea.NewProgram(model)`, add `v.AltScreen = true` in `Model.View()`
 5. `model.go` — `tea.KeyMsg` → `tea.KeyPressMsg` (switch case + all helper signatures)
 6. `editor.go` — textarea style field renames
 7. `quicknote.go`, `search.go` — textinput `SetWidth()`
