@@ -54,5 +54,8 @@ func RenameNode(path, newName string) (string, error) {
 // (equivalent to rm -rf). The caller is responsible for confirming with the
 // user before calling this — there is no undo.
 func DeleteNode(path string) error {
+	if strings.ContainsAny(filepath.Base(path), pathSep) {
+		return fmt.Errorf("'%s' contains path separators", filepath.Base(path))
+	}
 	return os.RemoveAll(path)
 }

@@ -17,7 +17,7 @@ var (
 
 // Style variables — bare declarations. rebuildStyles() is the single source of
 // truth for all initialization; it is called from init() at package load and
-// again on every Ctrl+T theme change.
+// again on every F8 theme change.
 var (
 	BinderStyle        lipgloss.Style
 	EditorStyle        lipgloss.Style

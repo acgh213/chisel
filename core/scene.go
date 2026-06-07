@@ -43,7 +43,6 @@ func ParseScene(path, content string) *Scene {
 // called (explicit save, autosave, etc.) — the trigger is the caller's concern.
 func (s *Scene) Save() error {
 	if !s.Meta.IsEmpty() {
-		s.Meta.WordCount = WordCount(s.Body)
 		now := time.Now()
 		s.Meta.Modified = &now
 		if s.Meta.Created == nil {

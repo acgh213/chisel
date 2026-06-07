@@ -29,22 +29,11 @@ func NewEditor() EditorModel {
 	ta.CharLimit = 0           // no arbitrary limit
 	ta.SetWidth(80)
 	ta.SetHeight(24)
-
-	// Style the textarea to match our theme.
 	ta.FocusedStyle.Base = lipgloss.NewStyle()
 	ta.BlurredStyle.Base = lipgloss.NewStyle()
-	ta.FocusedStyle.CursorLine = lipgloss.NewStyle().Background(ColorHighlight)
-	ta.BlurredStyle.CursorLine = lipgloss.NewStyle().Background(ColorHighlight)
-	ta.FocusedStyle.Placeholder = lipgloss.NewStyle().Foreground(ColorDim)
-	ta.BlurredStyle.Placeholder = lipgloss.NewStyle().Foreground(ColorDim)
-	ta.FocusedStyle.Text = lipgloss.NewStyle().Foreground(ColorFg)
-	ta.BlurredStyle.Text = lipgloss.NewStyle().Foreground(ColorFg)
-	ta.FocusedStyle.Prompt = lipgloss.NewStyle().Foreground(ColorAccent)
-	ta.BlurredStyle.Prompt = lipgloss.NewStyle().Foreground(ColorMuted)
-
-	return EditorModel{
-		textarea: ta,
-	}
+	m := EditorModel{textarea: ta}
+	m.RefreshStyles()
+	return m
 }
 
 // Init returns the editor's startup command: the textarea cursor-blink ticker

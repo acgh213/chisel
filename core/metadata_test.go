@@ -95,7 +95,6 @@ func TestRoundTrip(t *testing.T) {
 		DraftOrder: 1,
 		WordTarget: 1500,
 		POV:        "first",
-		WordCount:  1247,
 		Created:    &created,
 		Modified:   &modified,
 	}
@@ -113,8 +112,7 @@ func TestRoundTrip(t *testing.T) {
 	}
 	if gotMeta.Title != meta.Title || gotMeta.Status != meta.Status ||
 		gotMeta.Synopsis != meta.Synopsis || gotMeta.DraftOrder != meta.DraftOrder ||
-		gotMeta.WordTarget != meta.WordTarget || gotMeta.POV != meta.POV ||
-		gotMeta.WordCount != meta.WordCount {
+		gotMeta.WordTarget != meta.WordTarget || gotMeta.POV != meta.POV {
 		t.Errorf("scalar metadata not preserved:\n got %+v\nwant %+v", gotMeta, meta)
 	}
 	if len(gotMeta.Tags) != len(meta.Tags) || gotMeta.Tags[0] != "opening" || gotMeta.Tags[1] != "rain" {

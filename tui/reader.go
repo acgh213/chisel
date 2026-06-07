@@ -38,6 +38,22 @@ func (r *readerModel) open(title, body string, h int) {
 	}
 }
 
+// setHeight updates the number of visible lines after a terminal resize.
+func (r *readerModel) setHeight(h int) {
+	r.visible = h - 4
+	if r.visible < 1 {
+		r.visible = 1
+	}
+	// Clamp scroll offset so it stays within the new bounds.
+	max := len(r.lines) - r.visible
+	if max < 0 {
+		max = 0
+	}
+	if r.offset > max {
+		r.offset = max
+	}
+}
+
 // close deactivates the reader and frees memory.
 func (r *readerModel) close() {
 	r.isActive = false

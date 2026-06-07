@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -19,19 +20,37 @@ type ExportResult struct {
 // filename; scenes without a draft_order follow those that have one. Only the
 // prose body is included — frontmatter is stripped. If pandocPath is
 // non-empty, the markdown is also converted to manuscript.docx via pandoc.
+//
+// World-building directories (characters/, locations/, notes/) and hidden
+// entries are excluded — only prose scenes are compiled.
 func (p Project) Export(pandocPath string) (ExportResult, error) {
-	scenes, err := collectProjectScenes(p.Root)
-	if err != nil {
+	var scenes []*Scene
+	if err := walkMarkdown(p.Root, func(path string) error {
+		sc, err := LoadScene(path)
+		if err != nil {
+			return fmt.Errorf("reading %s: %w", path, err)
+		}
+		scenes = append(scenes, sc)
+		return nil
+	}); err != nil {
 		return ExportResult{}, err
 	}
-	SortScenesForReading(scenes)
+
+	sort.SliceStable(scenes, func(i, j int) bool {
+		ao, bo := scenes[i].Meta.DraftOrder, scenes[j].Meta.DraftOrder
+		if (ao == 0) != (bo == 0) {
+			return ao != 0
+		}
+		if ao != bo {
+			return ao < bo
+		}
+		ni := strings.ToLower(strings.TrimSuffix(filepath.Base(scenes[i].Path), ".md"))
+		nj := strings.ToLower(strings.TrimSuffix(filepath.Base(scenes[j].Path), ".md"))
+		return ni < nj
+	})
 
 	var sb strings.Builder
-	for i, info := range scenes {
-		sc, err := LoadScene(info.Path)
-		if err != nil {
-			return ExportResult{}, fmt.Errorf("reading %s: %w", info.Path, err)
-		}
+	for i, sc := range scenes {
 		if i > 0 {
 			sb.WriteString("\n\n---\n\n")
 		}
@@ -61,37 +80,4 @@ func (p Project) Export(pandocPath string) (ExportResult, error) {
 	}
 
 	return result, nil
-}
-
-// collectProjectScenes recursively collects SceneInfo for all .md files under
-// root. The exports/ subdirectory is skipped so manuscript.md is never
-// re-included on subsequent exports. Hidden entries (leading dot) are also
-// skipped.
-func collectProjectScenes(root string) ([]SceneInfo, error) {
-	exportsDir := filepath.Join(root, "exports")
-	var scenes []SceneInfo
-
-	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return nil // skip unreadable entries
-		}
-		name := d.Name()
-
-		if len(name) > 0 && name[0] == '.' {
-			if d.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
-		if d.IsDir() && filepath.Clean(path) == filepath.Clean(exportsDir) {
-			return filepath.SkipDir
-		}
-
-		if !d.IsDir() && filepath.Ext(name) == ".md" {
-			scenes = append(scenes, ReadSceneInfo(path))
-		}
-		return nil
-	})
-	return scenes, err
 }
