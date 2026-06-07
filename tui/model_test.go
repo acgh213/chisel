@@ -754,6 +754,51 @@ func TestSprintTimerExpiry(t *testing.T) {
 	}
 }
 
+// TestSprintGainIncludesUnsavedWords confirms that stopping the sprint with F7
+// counts words typed but not yet saved (bug: gain was stale before accumulateSessionWords was called).
+func TestSprintGainIncludesUnsavedWords(t *testing.T) {
+	dir := twoSceneProject(t)
+	m0, err := NewModel(dir)
+	if err != nil {
+		t.Fatalf("NewModel: %v", err)
+	}
+	var m tea.Model = m0
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+
+	// Open the first scene.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	mm := m.(Model)
+	if mm.editor.FilePath() == "" {
+		t.Skip("no file opened")
+	}
+
+	// Start sprint.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF7})
+	mm = m.(Model)
+	if !mm.sprintActive {
+		t.Fatal("sprint should be active after F7")
+	}
+
+	// Type words WITHOUT saving.
+	for _, r := range " one two three four five" {
+		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+
+	// Stop sprint — gain must include the unsaved words.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF7})
+	mm = m.(Model)
+	if mm.sprintActive {
+		t.Fatal("sprint should be inactive after second F7")
+	}
+	if !strings.Contains(mm.statusMsg, "+") {
+		t.Errorf("sprint stop status should report word gain, got %q", mm.statusMsg)
+	}
+	// The status message should not say "+0 words" since we typed 5 words.
+	if strings.Contains(mm.statusMsg, "+0 words") {
+		t.Errorf("sprint gain was 0 — unsaved words not counted: %q", mm.statusMsg)
+	}
+}
+
 // TestSearchOpensFromStructuralView confirms Ctrl+F works even when a structural
 // view (corkboard, outliner, timeline) is the active mode.
 func TestSearchOpensFromStructuralView(t *testing.T) {

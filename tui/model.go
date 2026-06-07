@@ -132,6 +132,7 @@ type Model struct {
 	pendingQuit bool   // true after first quit attempt with unsaved changes
 	statusMsg   string // temporary status message (e.g., "Saved.")
 	statusTimer int    // ticks remaining for status message
+	statusGen   int    // generation counter; stale statusTick chains stop when gen differs
 
 	// Revision history (Phase 3). The backend is opened lazily on first save or
 	// history view; history overlays the panes when showHistory is true.
@@ -175,6 +176,7 @@ type Model struct {
 	config         core.ChiselConfig // loaded from .chisel.yaml, written on theme change
 	sessionWords   int               // words written this session (accumulated on every save)
 	fileLoadWords  int               // word count at last load/save; baseline for delta
+	wordCount      int               // cached editor word count; updated on content changes
 	sprintActive   bool
 	sprintEnd      time.Time
 	sprintWordStart int // sessionWords when sprint started
@@ -258,21 +260,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, tea.Batch(cmds...)
 		}
-		// F7 toggles the sprint timer from any state (not while quickNote or search is open).
-		if msg.String() == "f7" && !m.quickNote.active() && !m.search.active() {
+		// F7 toggles the sprint timer from any state (not while quickNote, search, or reader is open).
+		if msg.String() == "f7" && !m.quickNote.active() && !m.search.active() && !m.reader.active() {
 			if m.sprintActive {
+				m.accumulateSessionWords()
 				m.sprintActive = false
 				gained := m.sessionWords - m.sprintWordStart
-				m.statusMsg = fmt.Sprintf("Sprint stopped — +%d words", gained)
+				cmds = append(cmds, m.setStatus(fmt.Sprintf("Sprint stopped — +%d words", gained), 3))
 			} else {
 				m.sprintActive = true
 				m.sprintEnd = time.Now().Add(25 * time.Minute)
 				m.sprintWordStart = m.sessionWords
-				m.statusMsg = "Sprint started — 25 min"
+				cmds = append(cmds, m.setStatus("Sprint started — 25 min", 3))
 				cmds = append(cmds, sprintTick())
 			}
-			m.statusTimer = 3
-			cmds = append(cmds, statusTick())
 			return m, tea.Batch(cmds...)
 		}
 		// When reading mode is active it owns all keys.
@@ -349,25 +350,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "ctrl+s":
 			if m.editor.FilePath() != "" {
+				var saveMsg string
 				if err := m.editor.Save(); err != nil {
-					m.statusMsg = fmt.Sprintf("Error saving: %v", err)
+					saveMsg = fmt.Sprintf("Error saving: %v", err)
 				} else {
 					m.accumulateSessionWords()
 					path := m.editor.FilePath()
-					words := m.editor.WordCount()
-					m.statusMsg = fmt.Sprintf("Saved %s (%d words)", filepath.Base(path), words)
+					m.wordCount = m.editor.WordCount()
+					saveMsg = fmt.Sprintf("Saved %s (%d words)", filepath.Base(path), m.wordCount)
 					// Snapshot the save. A snapshot failure is non-fatal — the
 					// file is already saved; we just note it in the status bar.
-					commitMsg := fmt.Sprintf("scene: %s — %d words", filepath.Base(path), words)
+					commitMsg := fmt.Sprintf("scene: %s — %d words", filepath.Base(path), m.wordCount)
 					if serr := m.snapshot(path, commitMsg); serr != nil {
-						m.statusMsg = fmt.Sprintf("Saved %s (snapshot failed: %v)", filepath.Base(path), serr)
+						saveMsg = fmt.Sprintf("Saved %s (snapshot failed: %v)", filepath.Base(path), serr)
 					}
 					// Refresh the panel — the saved file may be a character
 					// whose display details just changed.
 					m.syncRightPanel()
 				}
-				m.statusTimer = 3
-				cmds = append(cmds, statusTick())
+				cmds = append(cmds, m.setStatus(saveMsg, 3))
 			} else {
 				cmds = append(cmds, m.setStatus("No file open to save.", 2))
 			}
@@ -482,25 +483,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+e":
 			p := core.NewProject(m.root)
 			result, err := p.Export(m.pandocPath)
+			var exportMsg string
 			if err != nil {
-				m.statusMsg = fmt.Sprintf("Export failed: %v", err)
+				exportMsg = fmt.Sprintf("Export failed: %v", err)
 			} else if result.DocxPath != "" {
-				m.statusMsg = fmt.Sprintf("Exported: %s + %s",
+				exportMsg = fmt.Sprintf("Exported: %s + %s",
 					filepath.Base(result.MarkdownPath),
 					filepath.Base(result.DocxPath))
 			} else {
-				m.statusMsg = fmt.Sprintf("Exported: %s", filepath.Base(result.MarkdownPath))
+				exportMsg = fmt.Sprintf("Exported: %s", filepath.Base(result.MarkdownPath))
 			}
-			m.statusTimer = 3
-			cmds = append(cmds, statusTick())
+			cmds = append(cmds, m.setStatus(exportMsg, 3))
 
 		case "f8":
 			m.theme = NextTheme(m.theme)
 			ApplyTheme(m.theme)
 			m.editor.RefreshStyles()
 			m.config.Theme = m.theme
-			_ = core.SaveConfig(m.root, m.config)
-			cmds = append(cmds, m.setStatus(fmt.Sprintf("Theme: %s", m.theme), 2))
+			if err := core.SaveConfig(m.root, m.config); err != nil {
+				cmds = append(cmds, m.setStatus(fmt.Sprintf("Theme: %s (config save failed: %v)", m.theme, err), 3))
+			} else {
+				cmds = append(cmds, m.setStatus(fmt.Sprintf("Theme: %s", m.theme), 2))
+			}
 
 		default:
 			// Safety net: any key without an explicit case above is forwarded
@@ -521,6 +525,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+		m.wordCount = m.editor.WordCount()
 		return m, tea.Batch(cmds...)
 
 	case tea.WindowSizeMsg:
@@ -533,10 +538,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case statusTickMsg:
-		if m.statusTimer > 0 {
+		if msg.gen == m.statusGen && m.statusTimer > 0 {
 			m.statusTimer--
 			if m.statusTimer > 0 {
-				cmds = append(cmds, statusTick())
+				cmds = append(cmds, statusTick(msg.gen))
 			} else {
 				m.statusMsg = ""
 				m.pendingQuit = false // clear pending quit when message expires
@@ -547,11 +552,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case sprintTickMsg:
 		if m.sprintActive {
 			if time.Until(m.sprintEnd) <= 0 {
+				m.accumulateSessionWords()
 				m.sprintActive = false
 				gained := m.sessionWords - m.sprintWordStart
-				m.statusMsg = fmt.Sprintf("Sprint done! +%d words", gained)
-				m.statusTimer = 5
-				cmds = append(cmds, statusTick())
+				cmds = append(cmds, m.setStatus(fmt.Sprintf("Sprint done! +%d words", gained), 5))
 			} else {
 				cmds = append(cmds, sprintTick())
 			}
@@ -633,15 +637,15 @@ func (m Model) View() string {
 			}
 			statusParts = append(statusParts, fmt.Sprintf("%s — %d words%s",
 				filepath.Base(m.editor.FilePath()),
-				m.editor.WordCount(),
+				m.wordCount,
 				mod,
 			))
 		}
 
 		if m.focus == PaneBinder {
-			statusParts = append(statusParts, "[Binder]  Tab=Switch  n=New  N=Folder  r=Rename  d=Delete  F2=Corkboard  F3=Outliner  F4=Timeline  F5=Panel  F6=Read  F7=Sprint  ^T=Theme  ^F=Search")
+			statusParts = append(statusParts, "[Binder]  Tab=Switch  n=New  N=Folder  r=Rename  d=Delete  F2=Corkboard  F3=Outliner  F4=Timeline  F5=Panel  F6=Read  F7=Sprint  F8=Theme  ^F=Search")
 		} else {
-			statusParts = append(statusParts, "[Editor]  Tab=Switch  ^S=Save  ^N=New  F2=Corkboard  F4=Timeline  F5=Panel  F6=Read  F7=Sprint  ^T=Theme  ^E=Export  ^F=Search")
+			statusParts = append(statusParts, "[Editor]  Tab=Switch  ^S=Save  ^N=New  F2=Corkboard  F4=Timeline  F5=Panel  F6=Read  F7=Sprint  F8=Theme  ^E=Export  ^F=Search")
 		}
 	}
 
@@ -779,14 +783,14 @@ func (m Model) updateQuickNote(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case quickNoteConfirmed:
 		text := m.quickNote.value()
 		m.quickNote.close()
+		var noteMsg string
 		if err := core.AppendScratch(m.root, text); err != nil {
-			m.statusMsg = fmt.Sprintf("Note error: %v", err)
+			noteMsg = fmt.Sprintf("Note error: %v", err)
 		} else {
-			m.statusMsg = "Note saved → notes/scratch.md"
+			noteMsg = "Note saved → notes/scratch.md"
 			m.binder.RefreshPreservingExpanded()
 		}
-		m.statusTimer = 3
-		return m, tea.Batch(statusTick(), cmd)
+		return m, tea.Batch(m.setStatus(noteMsg, 3), cmd)
 	case quickNoteCancelled:
 		return m, cmd
 	}
@@ -842,14 +846,15 @@ func (m Model) updateHistory(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.editor.Init()
 		}
 		content, err := m.revBackend.Restore(m.editor.FilePath(), hash)
+		var restoreMsg string
 		if err != nil {
-			m.statusMsg = fmt.Sprintf("Restore failed: %v", err)
+			restoreMsg = fmt.Sprintf("Restore failed: %v", err)
 		} else {
 			m.editor.LoadRevision(m.editor.FilePath(), content)
-			m.statusMsg = fmt.Sprintf("Restored %s — review and Ctrl+S to keep", core.ShortHash(hash))
+			m.wordCount = m.editor.WordCount()
+			restoreMsg = fmt.Sprintf("Restored %s — review and Ctrl+S to keep", core.ShortHash(hash))
 		}
-		m.statusTimer = 4
-		return m, tea.Batch(statusTick(), m.editor.Init())
+		return m, tea.Batch(m.setStatus(restoreMsg, 4), m.editor.Init())
 	}
 
 	return m, nil
@@ -861,9 +866,11 @@ func (m Model) updateHistory(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // and the structural views so "open a scene" behaves identically everywhere.
 func (m *Model) openScene(path string) tea.Cmd {
 	if m.editor.IsModified() {
+		savedPath := m.editor.FilePath()
 		if err := m.editor.Save(); err != nil {
 			return m.setStatus(fmt.Sprintf("Error saving: %v", err), 3)
 		}
+		_ = m.snapshot(savedPath, fmt.Sprintf("Auto-save %s", filepath.Base(savedPath)))
 	}
 	// Accumulate words from the file being left (after any auto-save above),
 	// then load the new file and reset the baseline.
@@ -871,15 +878,14 @@ func (m *Model) openScene(path string) tea.Cmd {
 	if err := m.editor.LoadFile(path); err != nil {
 		return m.setStatus(fmt.Sprintf("Error opening: %v", err), 3)
 	}
-	m.fileLoadWords = m.editor.WordCount()
+	m.wordCount = m.editor.WordCount()
+	m.fileLoadWords = m.wordCount
 	m.viewMode = viewMain
 	m.focus = PaneEditor
 	m.binder.Focus(false)
 	m.editor.Focus(true)
-	m.statusMsg = fmt.Sprintf("Opened %s", filepath.Base(path))
-	m.statusTimer = 2
 	// Init() arms the cursor blink on focus gain.
-	return tea.Batch(statusTick(), m.editor.Init())
+	return tea.Batch(m.setStatus(fmt.Sprintf("Opened %s", filepath.Base(path)), 2), m.editor.Init())
 }
 
 // enterCorkboard loads the corkboard for the binder's current folder and shows
@@ -1109,17 +1115,18 @@ func (m Model) executePrompt() (tea.Model, tea.Cmd) {
 // start the countdown. secs is the display duration in seconds (2 = info,
 // 3 = error, 4–5 = restore/sprint).
 func (m *Model) setStatus(msg string, secs int) tea.Cmd {
+	m.statusGen++
 	m.statusMsg = msg
 	m.statusTimer = secs
-	return statusTick()
+	return statusTick(m.statusGen)
 }
 
 // Custom message types.
-type statusTickMsg struct{}
+type statusTickMsg struct{ gen int }
 
-func statusTick() tea.Cmd {
+func statusTick(gen int) tea.Cmd {
 	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
-		return statusTickMsg{}
+		return statusTickMsg{gen}
 	})
 }
 
