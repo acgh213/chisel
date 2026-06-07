@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/acgh213/chisel/core"
 )
@@ -85,7 +85,7 @@ func (o outlinerModel) selected() string {
 }
 
 // update handles a key press and reports any action the root model must take.
-func (o outlinerModel) update(msg tea.KeyMsg) (outlinerModel, viewAction) {
+func (o outlinerModel) update(msg tea.KeyPressMsg) (outlinerModel, viewAction) {
 	switch msg.String() {
 	case "j", "down":
 		if o.cursor < len(o.flat)-1 {

@@ -1,9 +1,9 @@
 package tui
 
 import (
-	"github.com/charmbracelet/bubbles/textarea"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/textarea"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/acgh213/chisel/core"
 )
@@ -29,8 +29,10 @@ func NewEditor() EditorModel {
 	ta.CharLimit = 0           // no arbitrary limit
 	ta.SetWidth(80)
 	ta.SetHeight(24)
-	ta.FocusedStyle.Base = lipgloss.NewStyle()
-	ta.BlurredStyle.Base = lipgloss.NewStyle()
+	s := ta.Styles()
+	s.Focused.Base = lipgloss.NewStyle()
+	s.Blurred.Base = lipgloss.NewStyle()
+	ta.SetStyles(s)
 	m := EditorModel{textarea: ta}
 	m.RefreshStyles()
 	return m
@@ -241,12 +243,14 @@ func (m *EditorModel) SetPath(newPath string) {
 // RefreshStyles updates the textarea color fields to match the current theme.
 // Call after ApplyTheme() so the textarea picks up the new Color* values.
 func (m *EditorModel) RefreshStyles() {
-	m.textarea.FocusedStyle.CursorLine = lipgloss.NewStyle().Background(ColorHighlight)
-	m.textarea.BlurredStyle.CursorLine = lipgloss.NewStyle().Background(ColorHighlight)
-	m.textarea.FocusedStyle.Placeholder = lipgloss.NewStyle().Foreground(ColorDim)
-	m.textarea.BlurredStyle.Placeholder = lipgloss.NewStyle().Foreground(ColorDim)
-	m.textarea.FocusedStyle.Text = lipgloss.NewStyle().Foreground(ColorFg)
-	m.textarea.BlurredStyle.Text = lipgloss.NewStyle().Foreground(ColorFg)
-	m.textarea.FocusedStyle.Prompt = lipgloss.NewStyle().Foreground(ColorAccent)
-	m.textarea.BlurredStyle.Prompt = lipgloss.NewStyle().Foreground(ColorMuted)
+	s := m.textarea.Styles()
+	s.Focused.CursorLine = lipgloss.NewStyle().Background(ColorHighlight)
+	s.Blurred.CursorLine = lipgloss.NewStyle().Background(ColorHighlight)
+	s.Focused.Placeholder = lipgloss.NewStyle().Foreground(ColorDim)
+	s.Blurred.Placeholder = lipgloss.NewStyle().Foreground(ColorDim)
+	s.Focused.Text = lipgloss.NewStyle().Foreground(ColorFg)
+	s.Blurred.Text = lipgloss.NewStyle().Foreground(ColorFg)
+	s.Focused.Prompt = lipgloss.NewStyle().Foreground(ColorAccent)
+	s.Blurred.Prompt = lipgloss.NewStyle().Foreground(ColorMuted)
+	m.textarea.SetStyles(s)
 }

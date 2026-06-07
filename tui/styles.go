@@ -1,6 +1,10 @@
 package tui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"image/color"
+
+	"charm.land/lipgloss/v2"
+)
 
 // Color variables — reassigned by ApplyTheme(). Default values are the peach theme.
 var (
@@ -58,53 +62,53 @@ func FocusedStyle(base lipgloss.Style) lipgloss.Style {
 
 // themeTokens holds the nine color slots that define a chisel theme.
 type themeTokens struct {
-	bg, fg, accent, muted, border, highlight, dim, green, red lipgloss.Color
+	bg, fg, accent, muted, border, highlight, dim, green, red color.Color
 }
 
 var themes = map[string]themeTokens{
 	"peach": {
-		bg:        "#1a1a2e",
-		fg:        "#e8d5c4",
-		accent:    "#c4a882",
-		muted:     "#8a7e72",
-		border:    "#3a3a4e",
-		highlight: "#2a2a3e",
-		dim:       "#5a5a6e",
-		green:     "#8ab882",
-		red:       "#c48882",
+		bg:        lipgloss.Color("#1a1a2e"),
+		fg:        lipgloss.Color("#e8d5c4"),
+		accent:    lipgloss.Color("#c4a882"),
+		muted:     lipgloss.Color("#8a7e72"),
+		border:    lipgloss.Color("#3a3a4e"),
+		highlight: lipgloss.Color("#2a2a3e"),
+		dim:       lipgloss.Color("#5a5a6e"),
+		green:     lipgloss.Color("#8ab882"),
+		red:       lipgloss.Color("#c48882"),
 	},
 	"forest": {
-		bg:        "#181e16",
-		fg:        "#d4e8c0",
-		accent:    "#88c070",
-		muted:     "#789060",
-		border:    "#2e3e2a",
-		highlight: "#202e1c",
-		dim:       "#4a5a44",
-		green:     "#a0d880",
-		red:       "#d08080",
+		bg:        lipgloss.Color("#181e16"),
+		fg:        lipgloss.Color("#d4e8c0"),
+		accent:    lipgloss.Color("#88c070"),
+		muted:     lipgloss.Color("#789060"),
+		border:    lipgloss.Color("#2e3e2a"),
+		highlight: lipgloss.Color("#202e1c"),
+		dim:       lipgloss.Color("#4a5a44"),
+		green:     lipgloss.Color("#a0d880"),
+		red:       lipgloss.Color("#d08080"),
 	},
 	"ocean": {
-		bg:        "#0e1c2a",
-		fg:        "#c4d8e8",
-		accent:    "#70b0e0",
-		muted:     "#6080a0",
-		border:    "#1e3040",
-		highlight: "#142030",
-		dim:       "#3a5070",
-		green:     "#70c0a0",
-		red:       "#d07080",
+		bg:        lipgloss.Color("#0e1c2a"),
+		fg:        lipgloss.Color("#c4d8e8"),
+		accent:    lipgloss.Color("#70b0e0"),
+		muted:     lipgloss.Color("#6080a0"),
+		border:    lipgloss.Color("#1e3040"),
+		highlight: lipgloss.Color("#142030"),
+		dim:       lipgloss.Color("#3a5070"),
+		green:     lipgloss.Color("#70c0a0"),
+		red:       lipgloss.Color("#d07080"),
 	},
 	"midnight": {
-		bg:        "#0c0c1a",
-		fg:        "#d0d0e8",
-		accent:    "#9090d0",
-		muted:     "#606080",
-		border:    "#1a1a2e",
-		highlight: "#101020",
-		dim:       "#383858",
-		green:     "#7098a8",
-		red:       "#c07080",
+		bg:        lipgloss.Color("#0c0c1a"),
+		fg:        lipgloss.Color("#d0d0e8"),
+		accent:    lipgloss.Color("#9090d0"),
+		muted:     lipgloss.Color("#606080"),
+		border:    lipgloss.Color("#1a1a2e"),
+		highlight: lipgloss.Color("#101020"),
+		dim:       lipgloss.Color("#383858"),
+		green:     lipgloss.Color("#7098a8"),
+		red:       lipgloss.Color("#c07080"),
 	},
 }
 

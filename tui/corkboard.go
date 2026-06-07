@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/acgh213/chisel/core"
 )
@@ -98,7 +98,7 @@ func (c corkboardModel) visibleRows() int {
 }
 
 // update handles a key press and reports any action the root model must take.
-func (c corkboardModel) update(msg tea.KeyMsg) (corkboardModel, viewAction) {
+func (c corkboardModel) update(msg tea.KeyPressMsg) (corkboardModel, viewAction) {
 	cols := c.cols()
 	switch msg.String() {
 	case "left", "h":

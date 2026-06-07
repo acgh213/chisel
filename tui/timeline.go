@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/acgh213/chisel/core"
 )
@@ -61,7 +61,7 @@ func (t timelineModel) selected() string {
 // update handles a key press and reports the action the root model must take.
 // F1/Esc and F2/F3/F4 are caught by updateView before reaching here, so this
 // only needs to handle navigation and Enter.
-func (t timelineModel) update(msg tea.KeyMsg) (timelineModel, viewAction) {
+func (t timelineModel) update(msg tea.KeyPressMsg) (timelineModel, viewAction) {
 	switch msg.String() {
 	case "j", "down":
 		if t.cursor < len(t.entries)-1 {

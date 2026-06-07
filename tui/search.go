@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/acgh213/chisel/core"
 )
@@ -51,7 +51,7 @@ const searchMaxVisible = 10
 func newSearch(root string) searchModel {
 	ti := textinput.New()
 	ti.Placeholder = "search all scenes…"
-	ti.Width = searchPopupW - 4 // subtract popup padding
+	ti.SetWidth(searchPopupW - 4) // subtract popup padding
 	return searchModel{input: ti, root: root}
 }
 
@@ -90,7 +90,7 @@ func (s searchModel) selectedPath() string {
 
 // update handles a key press and returns the updated model, the action for the
 // root model, and any Cmd to batch.
-func (s searchModel) update(msg tea.KeyMsg) (searchModel, searchAction, tea.Cmd) {
+func (s searchModel) update(msg tea.KeyPressMsg) (searchModel, searchAction, tea.Cmd) {
 	switch s.mode {
 	case searchInputting:
 		switch msg.String() {

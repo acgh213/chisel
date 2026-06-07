@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/acgh213/chisel/core"
 )
@@ -86,7 +86,7 @@ func (h historyModel) selectedHash() string {
 }
 
 // update handles a key press and reports any action the root model must take.
-func (h historyModel) update(msg tea.KeyMsg) (historyModel, historyAction) {
+func (h historyModel) update(msg tea.KeyPressMsg) (historyModel, historyAction) {
 	if h.mode == historyDiff {
 		switch msg.String() {
 		case "esc", "h", "left", "backspace":
