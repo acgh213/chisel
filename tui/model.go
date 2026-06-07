@@ -494,7 +494,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusTimer = 3
 			cmds = append(cmds, statusTick())
 
-		case "ctrl+t":
+		case "f8":
 			m.theme = NextTheme(m.theme)
 			ApplyTheme(m.theme)
 			m.editor.RefreshStyles()

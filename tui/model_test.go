@@ -593,7 +593,7 @@ func TestReaderOpensFromStructuralView(t *testing.T) {
 	}
 }
 
-// TestThemeCycling cycles through all four themes with Ctrl+T and confirms the
+// TestThemeCycling cycles through all four themes with F8 and confirms the
 // model's theme field changes each press, returning to the start after four presses.
 func TestThemeCycling(t *testing.T) {
 	defer ApplyTheme("peach") // restore global state after test
@@ -608,10 +608,10 @@ func TestThemeCycling(t *testing.T) {
 
 	want := []string{"forest", "ocean", "midnight", "peach"}
 	for i, expected := range want {
-		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlT})
+		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF8})
 		mm := m.(Model)
 		if mm.theme != expected {
-			t.Errorf("after %d Ctrl+T: theme = %q, want %q", i+1, mm.theme, expected)
+			t.Errorf("after %d F8: theme = %q, want %q", i+1, mm.theme, expected)
 		}
 	}
 }

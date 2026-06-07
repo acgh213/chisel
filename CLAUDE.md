@@ -143,7 +143,7 @@ No Python backend. No LLM. No manifest files. No system git dependency. No `os/e
 | F5 | Any | Toggle right panel (world panel: characters + locations) |
 | F6 | Any (scene open) | Open full-screen reading mode (word-wrapped centered column) |
 | F7 | Any | Start/stop 25-min sprint timer; status bar shows countdown + words written |
-| Ctrl+T | Any | Cycle theme (peach → forest → ocean → midnight → peach); saves to .chisel.yaml |
+| F8 | Any | Cycle theme (peach → forest → ocean → midnight → peach); saves to .chisel.yaml |
 | W | Binder (right panel open) | Toggle right panel between World Index and Scene Notes |
 | e | Binder (right panel, note mode) | Edit scene note inline |
 | ` (backtick) | Any | Open quick-note popup (saves to notes/scratch.md) |
@@ -219,7 +219,7 @@ The root model applies these actions — the sub-view never touches the root's s
 - **Phase 12:** Scene notes + richer entity sheets — `notes` frontmatter field; W toggles right panel between World Index and Scene Notes; e edits note inline; `CharacterMeta` gains Arc/Voice/Relationships; `LocationMeta` gains Atmosphere/Significance
 - **Phase 13:** Full-text search (Ctrl+F) — `core/search.go` SearchScenes (body-only, case-insensitive, skips exports/.git); `tui/search.go` overlay popup; two-phase UX: type query → Enter to search → browse results → Enter to open scene
 - **Phase 14:** Reading mode (F6) — `tui/reader.go` full-screen centered column; word-wrapped prose; ↑/↓/j/k scroll; F6/Esc exits. Typewriter centering and paragraph dim deferred: bubbles/textarea has no scroll-offset setter and no per-line styling hook.
-- **Phase 19:** Themes + session stats + sprint timer — `core/config.go` (.chisel.yaml, LoadConfig/SaveConfig); 4 dark themes (peach/forest/ocean/midnight) via `ApplyTheme`/`rebuildStyles()` in `tui/styles.go`; Ctrl+T cycles theme and persists to .chisel.yaml; session word count accumulated on every save; F7 starts/stops a 25-min sprint timer with countdown in the status bar; light theme deferred (requires full-screen bg painting).
+- **Phase 19:** Themes + session stats + sprint timer — `core/config.go` (.chisel.yaml, LoadConfig/SaveConfig); 4 dark themes (peach/forest/ocean/midnight) via `ApplyTheme`/`rebuildStyles()` in `tui/styles.go`; F8 cycles theme and persists to .chisel.yaml; session word count accumulated on every save; F7 starts/stops a 25-min sprint timer with countdown in the status bar; light theme deferred (requires full-screen bg painting).
 
 ## what's coming (Phases 15–17+)
 
