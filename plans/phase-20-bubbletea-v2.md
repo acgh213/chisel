@@ -189,7 +189,19 @@ go mod tidy
 
 ## Test impact
 
-Tests that call `m.View()` and check the result as a string will need updating: `View()` now returns `tea.View` not `string`. The rendered content is accessed via `tea.NewView(s)` — check whether test assertions should call `.String()` on the returned value or whether there's a v2 idiom for this. Compile errors will surface these directly; no need to preemptively audit.
+Tests that call `m.View()` and compare the result as a string need one mechanical fix: `View()` now returns `tea.View`, which has a `.String()` method.
+
+```go
+// Before
+view := m.View()
+if !strings.Contains(view, "expected") { ... }
+
+// After
+view := m.View().String()
+if !strings.Contains(view, "expected") { ... }
+```
+
+Compile errors will surface every call site. No need to preemptively audit — just fix what the compiler flags in step 9.
 
 ## Pre-migration checklist
 
