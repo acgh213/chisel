@@ -9,111 +9,159 @@ chisel uses [Semantic Versioning](https://semver.org/).
 
 ## [unreleased]
 
-### planned (future)
-- quarkdown rendering (typographic features in editor display)
-- image paste from clipboard to `scenes/assets/`
-- cloud sync via file sync tools (dropbox, syncthing)
+### planned
+- tag browser + binder filtering (#20)
+- split reference pane — Ctrl+\ to view two scenes side by side (#25)
+- character mention detection in right panel (#29)
+- collections — cross-folder scene groupings (#33)
+- custom metadata columns in outliner (#34)
+- content blocks — transclude/embed one scene inside another (#42)
+- light mode / theme toggle (#52)
+- kitty keyboard protocol support (#56)
+- declarative cursor control (#57)
+- vim mode (Ctrl+Shift+V) (#30)
+- project statistics — word count history chart with trend lines (#21, basic version shipped)
 
 ---
 
-## versioning convention
+## [0.2.0] — 2026-06-08
 
-| phase | version | what ships | status |
-|-------|---------|-----------|--------|
-| scaffolding | 0.0.1 | project creation, config, manifest I/O | ✅ |
-| binder + editor | 0.1.0 | writing experience, revision history (git) | ✅ |
-| llm integration | 0.2.0 | rewrite, generate, summarize, ask | ✅ |
-| mirror + research | 0.3.0 | style analysis, research gathering | ✅ |
-| export + polish | 1.0.0 | manuscript export, themes, corkboard, outline | ✅ |
-| character notes | 1.1.0 | character sheets, scene notes | ✅ |
-| jj backend | 1.2.0 | jj revision history, git→jj migration | ✅ |
+### added
+
+**status chrome and help layer (#64, #66):**
+- two-row bottom shelf — stable state row + hint row that never changes height
+- state row shows: file name, word count, reading time, modified marker, sprint state, session words, streak badge, project target progress
+- hint row shows compact context-sensitive key hints; shrinks (not hides) during sprints
+- `?` opens a full help layer from any non-text-input state (binder, structural views, history)
+- `?` inserts a literal question mark in editor, search, prompt, and quick-note
+- help layer shows global, binder, editor, structural view, and overlay keys
+- structural views (corkboard, outliner, timeline, history) show context in state row (e.g. "Corkboard — Acts (12 scenes)")
+
+**git history features (#44, #36, #21, #70):**
+- writing streak badge — 🔥 N days in state row, computed from git commit history
+- writing calendar heatmap (F9) — 52-week grid with month labels, day headers, commit drilldown overlay
+- word-count history chart (F10) — scrollable bar chart of daily word deltas parsed from commit messages; negative deltas highlighted in red
+- `AllLog(since)` — date-range-limited git log, no longer loads entire repo history
+- `FloorUTC` exported from core/ for shared use
+
+**project word target (#31):**
+- `project_target` field in `.chisel.yaml` — set your novel's target word count
+- `📊 23,412/80,000 (29%)` progress indicator in state row
+- full-width progress bar in stats view (F10)
+- `core.ProjectWordCount` walks all scene files and sums word counts
+
+**document links (#26):**
+- `[[scene-name]]` syntax detected in editor
+- Ctrl+Enter on a link navigates to the linked scene
+- resolves by filename, title, or partial match (case-insensitive)
+- searches scenes, characters, and locations
+- editor hint row shows `^Enter link`
+
+**reading time estimate (#27):**
+- `~X min read` shown next to word count in state row (200 WPM)
+
+**project bookmarks (#41):**
+- Ctrl+B toggles bookmark on current scene, persists to `.chisel.yaml`
+- ★ prefix shown on bookmarked scenes in binder
+- F11 opens bookmark list view — Enter to navigate, Esc to close
+- empty state shows "No bookmarks — press Ctrl+B on a scene to bookmark it"
+
+**outline-only export (#37):**
+- Ctrl+O exports `exports/outline.md` — scene structure without prose
+- each scene shows: title, status, word count/target, tags, POV, timeline date, synopsis (blockquote), notes
+
+**bubble tea v2 migration (#54, #62):**
+- migrated from Bubble Tea v1 to v2 (charm.land/bubbletea/v2)
+- Lipgloss v2, Bubbles v2
+- all key messages use `tea.KeyPressMsg`
+- sprint timer uses v2 native terminal progress bar (#55)
+
+**documentation (#65):**
+- per-folder CLAUDE.md files for core/ and tui/
+- API reference for every type and function
+- architecture invariants and file conventions
+
+### changed
+- theme cycling moved from Ctrl+T to F8 (consistent with F-key view toggles)
+- status bar replaced by two-row bottom shelf (breaking change for status bar customization)
+- inline 12-cell sprint progress bar removed in favor of v2 native terminal progress bar
+- `AllLog` now takes a `since time.Time` parameter for date-range limiting
+
+### fixed
+- sprint shelf no longer competes with key hints for the same row
+- help layer prevents `?` from interfering with text input states
+- quick-note popup positioned correctly above two-row shelf
 
 ---
 
-## [1.2.0] — 2026-05-24
+## [0.1.0] — 2026-05-25 to 2026-06-07
 
-### added
-- **phase 5 (export):** Ctrl+Shift+E docx export via pandoc wrapper (converts manuscript.md → manuscript.docx)
-- **phase 5 (settings):** Ctrl+T cycles through 5 themes (peach, dark, light, forest, ocean) with full colour token system
-- **phase 5 (settings):** Ctrl+Shift+V toggles vim bindings in editor (opt-in, saved to config.json)
-- **phase 5 (goals):** daily word target in config.json (`goals.daily_word_target`, default 500) with progress percentage in status bar
-- **phase 5 (sprint):** Ctrl+Shift+P writing sprint timer (25 min pomodoro) with countdown in status bar
-- **phase 5 (typewriter):** Ctrl+Shift+T typewriter mode toggle
-- **phase 6 (characters):** `characters/` directory auto-created on `chisel new`; Ctrl+Shift+C opens character sheet browser reading .md profiles with name, description, arc, and relationships sections
-- **phase 6 (scene notes):** Ctrl+Shift+N edits per-scene planning notes stored in manifest `notes` field
-- **phase 6 (timeline):** Ctrl+L timeline view — visual scene list with tree markers (├── └──) showing status, word count, and modification date
-- **phase 5 (reading):** Ctrl+Shift+R reading mode — full-screen, no chrome, any key exits
-- **phase 7 (jj backend):** `JJBackend` implementing `RevisionBackend` — uses `jj` CLI for describe, new, log, diff, and file-show; auto-detected when `history.backend` is `"jj"` in config
-- **phase 7 (migration):** git→jj migration path: change `history.backend` in config.json, restart chisel
+complete rewrite from scratch in Go with Bubble Tea TUI framework.
+the previous version (0.0.x–1.2.x) used a Python backend with NDJSON protocol and LLM integration.
+the rewrite is pure Go — no Python, no system git, no LLM dependency.
 
----
+### phases shipped
 
-## [1.0.0] — 2026-05-24
+**phase 0 — stabilize TUI:** basic binder + editor layout, sizing, blink, quit, editor Enter key
 
-### added
-- **phase 5 (export + polish):** Ctrl+E export to manuscript — concatenates all scenes in draft order to `exports/manuscript.md`
-- **phase 5 (export + polish):** Ctrl+B corkboard view — grid of scene cards showing title, word count, status, and first line (Scrivener-style)
-- **phase 5 (export + polish):** Ctrl+O outline view — collapsible outline showing scene titles, status icons (○ draft, ◑ revised, ● done), and word counts
-- **phase 5 (export + polish):** distraction-free mode via Ctrl+1 (editor-only) already present
+**phase 1 — extract core:** `core/` package separated from `tui/` — zero Charm imports, plain Go structs only
 
-### planned (future phases)
-- phase 5: docx export via pandoc wrapper, vim bindings toggle, theme switching (peach/dark/light/forest/ocean), daily word goals
-- phase 6: character sheets in `characters/`, auto-linking, character view, scene notes
-- phase 7: jj backend for revision history, git→jj migration
+**phase 2 — scene metadata:** YAML frontmatter parsing, `Metadata` struct, `LoadScene`/`Save`, round-trip serialization
 
----
+**phase 3 — revision history:** go-git backend (`GitBackend`), `RevisionBackend` interface, auto-snapshot on Ctrl+S, history browser (Ctrl+H), diff view, restore
 
-## [0.3.0] — 2026-05-24
+**phase 4 — corkboard + outliner:** index-card grid (F2), collapsible outline (F3), cross-hop navigation
 
-### added
-- **phase 4 (mirror + research):** Ctrl+A style analysis using mirror model — surfaces overused words, rhythm issues, writerly tics
-- **phase 4 (mirror + research):** Ctrl+F5 research gathering — prompt for topic, LLM researches, saves to `research/{slug}.md`, auto-tags current scene
-- **phase 4 (mirror + research):** auto-tag — new research notes automatically linked to current scene via `research_refs` in manifest
-- **phase 4 (mirror + research):** tag system — `t` adds tag to selected scene (inline prompt), `T` filters binder by tag, filter clears on empty input
-- **phase 4 (mirror + research):** `NewBinderModelFiltered` — filtered binder view showing only scenes matching a tag
+**phase 5 — compile + export:** `Project.Export()` → `exports/manuscript.md`, optional `.docx` via pandoc
 
----
+**phase 6 — binder CRUD:** create scene/folder (n/N), rename (r), delete (d), inline prompt bar
 
-## [0.2.0] — 2026-05-24
+**phase 7 — chisel init:** `chisel init` scaffolds new projects, templates (minimal, novel, short-stories)
 
-### added
-- **phase 3 (llm integration):** `chisel.py` Python backend with NDJSON protocol — handles rewrite, generate, summarize, ask, and analyze operations via OpenAI-compatible API
-- **phase 3 (llm integration):** provider config in `config.json` with separate `llm` and `mirror` model slots, each with `api_base`, `model`, `max_tokens`, and `temperature`
-- **phase 3 (llm integration):** Go subprocess manager (`tui/llm.go`) spawns `chisel.py`, communicates via NDJSON over stdin/stdout, handles startup/ready signal with 5s timeout
-- **phase 3 (llm integration):** Ctrl+R rewrite — sends selected text to LLM, alternatives appear in LLM panel
-- **phase 3 (llm integration):** Ctrl+G generate — continues from cursor with optional guidance
-- **phase 3 (llm integration):** Ctrl+Shift+S summarize — summary of selection or current scene
-- **phase 3 (llm integration):** Ctrl+K ask — inline prompt bar opens, response streams token-by-token to LLM panel
-- **phase 3 (llm integration):** streaming responses — tokens appear in LLM panel as they arrive via channel-based polling
-- **phase 3 (llm integration):** mode 3 now shows real LLM panel content (replaces placeholder)
-- **phase 3 (llm integration):** graceful degradation when Python backend is unavailable — TUI runs without LLM features
+**phase 8 — right panel:** character/location inspector (F5), world index, scene notes
+
+**phase 9 — location sheets:** `locations/` directory, `ListLocations`, location metadata
+
+**phase 10 — timeline:** date-sorted scene list (F4), `BuildTimeline`, cross-hop navigation
+
+**phase 11 — quick note:** floating popup (backtick), any state, saves to `notes/scratch.md`
+
+**phase 12 — scene notes:** `notes` frontmatter field, richer entity sheets, right panel integration
+
+**phase 13 — search:** full-text search overlay (Ctrl+F), case-insensitive, browse results
+
+**phase 14 — reading mode:** full-screen reading (F6), word-wrapped, no chrome, scroll with j/k
+
+**phase 15–18 — polish:** layout fixes, edge cases, test coverage, documentation
+
+**phase 19 — themes + session stats + sprint timer:** four dark themes (peach/forest/ocean/midnight, F8), session word count accumulation, 25-minute pomodoro sprint timer (F7), daily goal tracking
+
+### architecture
+- `core/` — pure Go data layer (zero Charm imports)
+- `tui/` — Bubble Tea presentation layer
+- filesystem is the project — `.md` files with YAML frontmatter
+- git-backed revision history (go-git, pure Go)
+- four dark themes driven by `tui/styles.go` color tokens
+- structural views follow a consistent pattern: `update()` returns `viewAction`, sized via `layout()`, integrated with bottom shelf
 
 ---
 
-## [0.1.0] — 2026-05-24
+## [0.0.x–1.2.x] — 2026-05-24 (legacy)
 
-### added
-- **phase 0 (scaffolding):** `chisel new` command scaffolds a project with `scenes/`, `research/`, `exports/`, `.gitignore`, `config.json`, `manifest.jsonl`, and git init via go-git
-- **phase 0 (scaffolding):** config loading (`LoadConfig`/`SaveConfig`/`DefaultConfig`) with llm, mirror, history, and editor slots
-- **phase 0 (scaffolding):** manifest I/O (`LoadManifest`/`SaveManifest`/`AppendEntry`) with JSONL read/write and append-only semantics
-- **phase 0 (scaffolding):** style colour tokens (peach theme default) as lipgloss.Color constants
-- **phase 1 (binder + editor):** binder tree with recursive `scenes/` directory scan, expand/collapse folders, status indicators (draft · revised · done)
-- **phase 1 (binder + editor):** markdown editor wrapping `bubbles/textarea` with word count, file load/save, modified tracking
-- **phase 1 (binder + editor):** three pane modes: Ctrl+1 (editor only), Ctrl+2 (binder + editor), Ctrl+3 (binder + editor + LLM placeholder)
-- **phase 1 (binder + editor):** scene CRUD: `n` inline prompt (bubbles/textinput) for new scene, `d` delete with confirm dialog, `F2` rename, `K`/`J` reorder
-- **phase 1 (binder + editor):** status bar with scene name, word count, modified indicator, session word count, session timer, and focus indicator
-- **phase 1 (binder + editor):** Tab to toggle focus between binder and editor; Esc to return focus to editor from binder
-- **phase 2 (revision history):** `RevisionBackend` interface (Save, Log, Diff, Restore) abstracted for future jj backend
-- **phase 2 (revision history):** go-git backend implementing `RevisionBackend` — auto-commit on every Ctrl+S with structured commit messages
-- **phase 2 (revision history):** history browser (Ctrl+H) with revision list, side-by-side diff view (enter), and restore (r)
-- cross-document consistency fixes: resolved Ctrl+S save vs. summarize conflict (summarize → Ctrl+Shift+S); aligned phase ordering across all four docs; removed shell-out git commands in favour of go-git; removed premature pillow dependency
-- platform notes: Windows compatibility via `filepath` package, `os.Executable()` for locating `chisel.py`, reserved character stripping
+the original version with Python backend, NDJSON protocol, and LLM integration.
+this version was completely replaced by the Bubble Tea rewrite (0.1.0+).
 
-## [0.0.0] — 2026-05-24
+### included
+- project scaffolding, config/manifest I/O
+- binder tree, markdown editor, revision history
+- LLM integration via Python subprocess (rewrite, generate, summarize, ask)
+- mirror analysis, research gathering, auto-tag
+- export to manuscript, corkboard, outline, themes
+- character sheets, scene notes, timeline
+- jj backend for revision history
 
-### added
-- initial repo creation
-- README with project vision
-- DESIGN.md with architecture, data model, pane layouts, llm integration
-- GOALS.md with short/medium/long-term roadmap and non-goals
-- PLAN.md with phased implementation details
+### why it was rewritten
+- Python dependency was fragile (subprocess management, environment setup)
+- LLM integration added complexity without clear value for a writing tool
+- the TUI framework (original) was replaced by Bubble Tea for better component reuse
+- the rewrite is simpler, faster, and has zero external dependencies beyond go-git
