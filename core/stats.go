@@ -182,3 +182,17 @@ func ProjectWordCount(root string) (int, error) {
 	})
 	return total, err
 }
+
+// ReadingTime returns the estimated reading time in minutes for the given word
+// count, assuming 200 words per minute. Returns at least 1 minute for any
+// non-zero word count.
+func ReadingTime(words int) int {
+	if words <= 0 {
+		return 0
+	}
+	mins := words / 200
+	if mins < 1 {
+		mins = 1
+	}
+	return mins
+}

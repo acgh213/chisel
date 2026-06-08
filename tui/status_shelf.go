@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"charm.land/lipgloss/v2"
+
+	"github.com/acgh213/chisel/core"
 )
 
 const bottomShelfRows = 2
@@ -80,6 +82,10 @@ func (m Model) stateContextText() string {
 		mod := ""
 		if m.editor.IsModified() {
 			mod = " *"
+		}
+		rt := core.ReadingTime(m.wordCount)
+		if rt > 0 {
+			return fmt.Sprintf("%s - %d words (~%d min read)%s", filepath.Base(m.editor.FilePath()), m.wordCount, rt, mod)
 		}
 		return fmt.Sprintf("%s - %d words%s", filepath.Base(m.editor.FilePath()), m.wordCount, mod)
 	default:
