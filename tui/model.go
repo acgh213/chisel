@@ -184,6 +184,10 @@ type Model struct {
 	sprintActive    bool
 	sprintEnd       time.Time
 	sprintWordStart int // sessionWords when sprint started
+
+	// Streak badge (issue #44). Cached from git history; refreshed on save
+	// and scene open. Empty (zero value) when git is unavailable.
+	streak core.Streak
 }
 
 // NewModel creates a new chisel root model for the given project directory.
@@ -382,6 +386,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// Refresh the panel — the saved file may be a character
 					// whose display details just changed.
 					m.syncRightPanel()
+					m.refreshStreak()
 				}
 				cmds = append(cmds, m.setStatus(saveMsg, 3))
 			} else {
@@ -870,6 +875,7 @@ func (m *Model) openScene(path string) tea.Cmd {
 	m.focus = PaneEditor
 	m.binder.Focus(false)
 	m.editor.Focus(true)
+	m.refreshStreak()
 	// Init() arms the cursor blink on focus gain.
 	return tea.Batch(m.setStatus(fmt.Sprintf("Opened %s", filepath.Base(path)), 2), m.editor.Init())
 }
@@ -1095,6 +1101,23 @@ func (m Model) executePrompt() (tea.Model, tea.Cmd) {
 	}
 
 	return m, tea.Batch(cmds...)
+}
+
+// refreshStreak recomputes the writing streak from git history. It is a no-op
+// when the git backend has not been opened yet (don't init git just for streak).
+func (m *Model) refreshStreak() {
+	if m.revBackend == nil {
+		return
+	}
+	gb, ok := m.revBackend.(*core.GitBackend)
+	if !ok {
+		return
+	}
+	days, err := core.ActiveDays(gb)
+	if err != nil {
+		return
+	}
+	m.streak = core.ComputeStreak(days)
 }
 
 // setStatus sets a timed status-bar message and returns the tick command to

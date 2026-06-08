@@ -52,6 +52,9 @@ func (m Model) stateRowText() string {
 			parts = append(parts, fmt.Sprintf("Today +%d", m.sessionWords))
 		}
 	}
+	if m.streak.Current > 0 {
+		parts = append(parts, fmt.Sprintf("\U0001f525 %d days", m.streak.Current))
+	}
 	return strings.Join(parts, "  |  ")
 }
 
