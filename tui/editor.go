@@ -240,6 +240,16 @@ func (m *EditorModel) SetPath(newPath string) {
 	}
 }
 
+// LinkUnderCursor returns the [[...]] anchor text under the cursor and true,
+// or ("", false) if the cursor is not inside a link. Uses the textarea's
+// Line() and Column() to determine the cursor position.
+func (m EditorModel) LinkUnderCursor() (string, bool) {
+	text := m.textarea.Value()
+	line := m.textarea.Line()
+	col := m.textarea.Column()
+	return core.LinkAtCursor(text, line, col)
+}
+
 // RefreshStyles updates the textarea color fields to match the current theme.
 // Call after ApplyTheme() so the textarea picks up the new Color* values.
 func (m *EditorModel) RefreshStyles() {

@@ -111,7 +111,7 @@ func (m Model) hintRowText() string {
 	case m.focus == PaneBinder:
 		return "Binder: Tab switch  n new  N folder  r rename  d delete  ? help"
 	default:
-		return "Editor: Tab switch  ^S save  ^N new  ^E export"
+		return "Editor: Tab switch  ^S save  ^N new  ^E export  ^Enter link"
 	}
 }
 

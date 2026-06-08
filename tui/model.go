@@ -509,6 +509,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.syncRightPanel()
 			}
 
+		case "ctrl+enter":
+			if m.focus == PaneEditor {
+				if anchor, ok := m.editor.LinkUnderCursor(); ok {
+					if path, err := core.ResolveLink(m.root, anchor); err == nil {
+						cmds = append(cmds, m.openScene(path))
+					} else {
+						cmds = append(cmds, m.setStatus(fmt.Sprintf("Link not found: %s", anchor), 2))
+					}
+				}
+			}
+
 		case "ctrl+e":
 			p := core.NewProject(m.root)
 			result, err := p.Export(m.pandocPath)
