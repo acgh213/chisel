@@ -677,7 +677,8 @@ func (m Model) View() tea.View {
 	if m.sprintActive {
 		remaining := time.Until(m.sprintEnd)
 		gained := m.sessionWords - m.sprintWordStart
-		statusParts = append(statusParts, fmt.Sprintf("Sprint %s  +%d words", formatDuration(remaining), gained))
+		pct := remaining.Seconds() / (25 * 60)
+		statusParts = append(statusParts, fmt.Sprintf("%s %s  +%d words", sprintBarStr(pct, 12), formatDuration(remaining), gained))
 	} else if m.sessionWords > 0 {
 		if m.config.DailyGoal > 0 {
 			statusParts = append(statusParts, fmt.Sprintf("+%d/%d today", m.sessionWords, m.config.DailyGoal))
@@ -1187,4 +1188,19 @@ func formatDuration(d time.Duration) string {
 	m := int(d.Minutes())
 	s := int(d.Seconds()) % 60
 	return fmt.Sprintf("%02d:%02d", m, s)
+}
+
+// sprintBarStr renders a fixed-width inline progress bar for the sprint timer.
+// pct is the fraction remaining (1.0 = full, 0.0 = empty).
+func sprintBarStr(pct float64, width int) string {
+	if pct < 0 {
+		pct = 0
+	}
+	if pct > 1 {
+		pct = 1
+	}
+	filled := int(pct * float64(width))
+	bar := lipgloss.NewStyle().Foreground(ColorAccent).Render(strings.Repeat("█", filled)) +
+		lipgloss.NewStyle().Foreground(ColorDim).Render(strings.Repeat("░", width-filled))
+	return bar
 }
