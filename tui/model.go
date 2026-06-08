@@ -178,6 +178,9 @@ type Model struct {
 	sprintActive   bool
 	sprintEnd      time.Time
 	sprintWordStart int // sessionWords when sprint started
+
+	// Streak badge (issue #44) — computed from git history, refreshed on save.
+	streak core.Streak
 }
 
 // NewModel creates a new chisel root model for the given project directory.
@@ -369,6 +372,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// Refresh the panel — the saved file may be a character
 					// whose display details just changed.
 					m.syncRightPanel()
+					m.refreshStreak()
 				}
 				m.statusTimer = 3
 				cmds = append(cmds, statusTick())
@@ -673,6 +677,15 @@ func (m Model) View() string {
 		}
 	}
 
+	// Streak badge, shown in every view when there's an active streak.
+	if m.streak.Current > 0 {
+		label := "day"
+		if m.streak.Current > 1 {
+			label = "days"
+		}
+		statusParts = append(statusParts, fmt.Sprintf("🔥 %d %s", m.streak.Current, label))
+	}
+
 	// The bottom row is either the prompt bar (during CRUD operations) or the
 	// regular status bar. Both are exactly one row.
 	var bottomBar string
@@ -893,6 +906,7 @@ func (m *Model) openScene(path string) tea.Cmd {
 		return statusTick()
 	}
 	m.fileLoadWords = m.editor.WordCount()
+	m.refreshStreak()
 	m.viewMode = viewMain
 	m.focus = PaneEditor
 	m.binder.Focus(false)
@@ -1199,6 +1213,24 @@ func (m *Model) accumulateSessionWords() {
 		m.sessionWords += delta
 	}
 	m.fileLoadWords = current
+}
+
+// refreshStreak recomputes the writing streak from git history. A missing or
+// empty repo is not an error — it just means streak is zero.
+func (m *Model) refreshStreak() {
+	backend, err := m.ensureBackend()
+	if err != nil {
+		return // no repo yet, streak stays zero
+	}
+	gb, ok := backend.(*core.GitBackend)
+	if !ok {
+		return // non-git backend, skip
+	}
+	days, err := core.ActiveDays(gb)
+	if err != nil {
+		return
+	}
+	m.streak = core.ComputeStreak(days)
 }
 
 // Sprint timer message and command.
