@@ -540,6 +540,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		cmds = append(cmds, m.setStatus(exportMsg, 3))
 
+		case "ctrl+o":
+			p := core.NewProject(m.root)
+			result, err := p.OutlineExport()
+			var outlineMsg string
+			if err != nil {
+				outlineMsg = fmt.Sprintf("Outline export failed: %v", err)
+			} else {
+				outlineMsg = fmt.Sprintf("Outline exported: %d scenes, %d words → %s",
+					result.SceneCount, result.WordCount, filepath.Base(result.Path))
+			}
+			cmds = append(cmds, m.setStatus(outlineMsg, 3))
+
 		case "ctrl+b":
 			if m.editor.FilePath() != "" {
 				rel, _ := filepath.Rel(m.root, m.editor.FilePath())
