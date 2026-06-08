@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // readerColW is the width of the reading column in characters.
@@ -65,7 +65,7 @@ func (r *readerModel) close() {
 func (r readerModel) active() bool { return r.isActive }
 
 // update handles a key press. Returns (updated model, true if exit requested).
-func (r readerModel) update(msg tea.KeyMsg) (readerModel, bool) {
+func (r readerModel) update(msg tea.KeyPressMsg) (readerModel, bool) {
 	switch msg.String() {
 	case "esc", "f6":
 		r.close()

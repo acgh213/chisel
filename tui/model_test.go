@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // TestComputeLayoutSumsToWidth is the "panes tile the terminal exactly"
@@ -108,7 +108,7 @@ func TestEnterInsertsNewlineInEditor(t *testing.T) {
 	m.editor.Focus(true)
 	m.focus = PaneEditor
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	got := updated.(Model).editor.Content()
 	if !strings.Contains(got, "\n") {
 		t.Errorf("Enter in editor did not insert a newline; content = %q", got)
@@ -140,7 +140,7 @@ func TestViewFitsTerminal(t *testing.T) {
 	}
 	for _, s := range sizes {
 		updated, _ := base.Update(tea.WindowSizeMsg{Width: s.w, Height: s.h})
-		view := updated.View()
+		view := updated.View().Content
 		lines := strings.Split(view, "\n")
 
 		if len(lines) > s.h {
@@ -189,18 +189,18 @@ func TestQuickNoteFlow(t *testing.T) {
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 
 	// Backtick should open the popup.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("`")})
+	m, _ = m.Update(tea.KeyPressMsg{Code: '`', Text: "`"})
 	if mm := m.(Model); !mm.quickNote.active() {
 		t.Fatal("backtick should activate the quick-note popup")
 	}
 
 	// Type some text.
 	for _, r := range "hello world" {
-		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m, _ = m.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
 	}
 
 	// Enter should save and close.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	mm := m.(Model)
 	if mm.quickNote.active() {
 		t.Error("quick-note popup should be closed after Enter")
@@ -220,8 +220,8 @@ func TestQuickNoteEscCancels(t *testing.T) {
 	var m tea.Model = m0
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("`")})
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m, _ = m.Update(tea.KeyPressMsg{Code: '`', Text: "`"})
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 
 	if mm := m.(Model); mm.quickNote.active() {
 		t.Error("quick-note popup should be closed after Esc")
@@ -240,13 +240,13 @@ func TestQuickNoteOpensFromStructuralView(t *testing.T) {
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 
 	// Open corkboard first.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF2})
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyF2})
 	if mm := m.(Model); mm.viewMode != viewCorkboard {
 		t.Fatal("expected corkboard view")
 	}
 
 	// Backtick should open the quick-note popup even from corkboard.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("`")})
+	m, _ = m.Update(tea.KeyPressMsg{Code: '`', Text: "`"})
 	if mm := m.(Model); !mm.quickNote.active() {
 		t.Error("backtick should open quick-note from structural view")
 	}
@@ -284,7 +284,7 @@ func TestWTogglesNoteModeInRightPanel(t *testing.T) {
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 
 	// Open right panel with F5.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF5})
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyF5})
 	mm := m.(Model)
 	if !mm.showRightPanel {
 		t.Fatal("F5 should open right panel")
@@ -294,14 +294,14 @@ func TestWTogglesNoteModeInRightPanel(t *testing.T) {
 	}
 
 	// W from binder focus should enter note mode.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("W")})
+	m, _ = m.Update(tea.KeyPressMsg{Code: 'W', Text: "W"})
 	mm = m.(Model)
 	if !mm.rightPanel.noteMode {
 		t.Error("W should toggle note mode on")
 	}
 
 	// Second W should toggle back.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("W")})
+	m, _ = m.Update(tea.KeyPressMsg{Code: 'W', Text: "W"})
 	mm = m.(Model)
 	if mm.rightPanel.noteMode {
 		t.Error("second W should toggle note mode off")
@@ -320,14 +320,14 @@ func TestWDoesNotToggleWhenEditorFocused(t *testing.T) {
 	// Open the first scene and switch focus to editor.
 	var m tea.Model = m0
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF5})   // open panel
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})  // focus editor
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyF5})  // open panel
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // focus editor
 	mm := m.(Model)
 	if mm.focus != PaneEditor {
 		t.Skip("could not move focus to editor — skipping")
 	}
 
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("W")})
+	m, _ = m.Update(tea.KeyPressMsg{Code: 'W', Text: "W"})
 	mm = m.(Model)
 	if mm.rightPanel.noteMode {
 		t.Error("W in editor focus should not toggle note mode")
@@ -344,11 +344,11 @@ func TestEOpensNotePromptInNoteMode(t *testing.T) {
 	}
 	var m tea.Model = m0
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF5})                               // open panel
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("W")})        // enter note mode
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyF5})      // open panel
+	m, _ = m.Update(tea.KeyPressMsg{Code: 'W', Text: "W"}) // enter note mode
 
 	// e should open the note prompt.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+	m, _ = m.Update(tea.KeyPressMsg{Code: 'e', Text: "e"})
 	mm := m.(Model)
 	if mm.prompt.mode != promptNote {
 		t.Errorf("e in note mode should open promptNote, got mode %d", mm.prompt.mode)
@@ -379,15 +379,15 @@ func TestNoteRoutesThroughEditorWhenFileOpen(t *testing.T) {
 	m = mm
 
 	// Open panel, toggle note mode, open edit prompt.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF5})
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("W")})
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyF5})
+	m, _ = m.Update(tea.KeyPressMsg{Code: 'W', Text: "W"})
+	m, _ = m.Update(tea.KeyPressMsg{Code: 'e', Text: "e"})
 
 	// Type a note and confirm.
 	for _, ch := range "my inline note" {
-		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{ch}})
+		m, _ = m.Update(tea.KeyPressMsg{Code: ch, Text: string(ch)})
 	}
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 
 	mm = m.(Model)
 	if mm.editor.Notes() != "my inline note" {
@@ -409,13 +409,13 @@ func TestSearchOpenClose(t *testing.T) {
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 
 	// Ctrl+F should open the search overlay.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlF})
+	m, _ = m.Update(tea.KeyPressMsg{Code: 'f', Mod: tea.ModCtrl})
 	if mm := m.(Model); !mm.search.active() {
 		t.Fatal("Ctrl+F should activate the search overlay")
 	}
 
 	// Esc should close it.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	if mm := m.(Model); mm.search.active() {
 		t.Error("Esc should close the search overlay")
 	}
@@ -432,15 +432,15 @@ func TestSearchFlowOpensScene(t *testing.T) {
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 
 	// Open search.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlF})
+	m, _ = m.Update(tea.KeyPressMsg{Code: 'f', Mod: tea.ModCtrl})
 
 	// Type "three" — only a.md body contains it.
 	for _, r := range "three" {
-		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m, _ = m.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
 	}
 
 	// Enter runs the search and should switch to browse mode.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	mm := m.(Model)
 	if !mm.search.active() {
 		t.Fatal("search should still be active after running a search with results")
@@ -453,7 +453,7 @@ func TestSearchFlowOpensScene(t *testing.T) {
 	}
 
 	// Enter again opens the selected scene.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	mm = m.(Model)
 	if mm.search.active() {
 		t.Error("search overlay should be closed after opening a result")
@@ -475,7 +475,7 @@ func TestReaderOpenCloseNoScene(t *testing.T) {
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 
 	// F6 with no open scene should show a status message, not open reader.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF6})
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyF6})
 	mm := m.(Model)
 	if mm.reader.active() {
 		t.Error("reader should not activate when no scene is open")
@@ -508,7 +508,7 @@ func TestReaderOpenCloseWithScene(t *testing.T) {
 	m = mm
 
 	// F6 should activate reading mode.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF6})
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyF6})
 	mm = m.(Model)
 	if !mm.reader.active() {
 		t.Fatal("F6 should activate reading mode when a scene is open")
@@ -518,13 +518,13 @@ func TestReaderOpenCloseWithScene(t *testing.T) {
 	}
 
 	// Arrow keys should scroll (j = down) without exiting.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	m, _ = m.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
 	if mm2 := m.(Model); !mm2.reader.active() {
 		t.Error("j should not exit reading mode")
 	}
 
 	// Esc should exit reading mode.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	if mm2 := m.(Model); mm2.reader.active() {
 		t.Error("Esc should close reading mode")
 	}
@@ -551,8 +551,8 @@ func TestReaderF6ExitsReader(t *testing.T) {
 	}
 	m = mm
 
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF6}) // open
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF6}) // close
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyF6}) // open
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyF6}) // close
 	if mm2 := m.(Model); mm2.reader.active() {
 		t.Error("second F6 should close reading mode")
 	}
@@ -581,13 +581,13 @@ func TestReaderOpensFromStructuralView(t *testing.T) {
 	m = mm
 
 	// Switch to corkboard.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF2})
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyF2})
 	if mm2 := m.(Model); mm2.viewMode != viewCorkboard {
 		t.Fatal("expected corkboard view")
 	}
 
 	// F6 should still open reading mode.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF6})
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyF6})
 	if mm2 := m.(Model); !mm2.reader.active() {
 		t.Error("F6 should open reading mode from structural view when scene is loaded")
 	}
@@ -608,7 +608,7 @@ func TestThemeCycling(t *testing.T) {
 
 	want := []string{"forest", "ocean", "midnight", "peach"}
 	for i, expected := range want {
-		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF8})
+		m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyF8})
 		mm := m.(Model)
 		if mm.theme != expected {
 			t.Errorf("after %d F8: theme = %q, want %q", i+1, mm.theme, expected)
@@ -628,7 +628,7 @@ func TestSessionWordCountAccumulates(t *testing.T) {
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 
 	// Open the first scene via Enter in the binder; openScene focuses the editor.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	mm := m.(Model)
 	if mm.editor.FilePath() == "" {
 		t.Skip("no file opened — skipping")
@@ -636,11 +636,11 @@ func TestSessionWordCountAccumulates(t *testing.T) {
 
 	// Editor is already focused. Type extra words.
 	for _, r := range " extra words here" {
-		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m, _ = m.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
 	}
 
 	// Save and check that session words increased.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	m, _ = m.Update(tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
 	mm = m.(Model)
 	if mm.sessionWords <= 0 {
 		t.Errorf("sessionWords = %d after saving with new words, want > 0", mm.sessionWords)
@@ -658,7 +658,7 @@ func TestSprintStartStop(t *testing.T) {
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 
 	// F7 should start the sprint.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF7})
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyF7})
 	mm := m.(Model)
 	if !mm.sprintActive {
 		t.Fatal("F7 should activate the sprint timer")
@@ -668,7 +668,7 @@ func TestSprintStartStop(t *testing.T) {
 	}
 
 	// F7 again should stop it.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF7})
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyF7})
 	mm = m.(Model)
 	if mm.sprintActive {
 		t.Error("second F7 should stop the sprint timer")
@@ -698,7 +698,7 @@ func TestReaderResizeUpdatesVisible(t *testing.T) {
 	m = mm
 
 	// Open reader at height 40.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF6})
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyF6})
 	mm = m.(Model)
 	if !mm.reader.active() {
 		t.Fatal("reader should be active after F6")
@@ -733,7 +733,7 @@ func TestSprintTimerExpiry(t *testing.T) {
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 
 	// Start sprint.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF7})
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyF7})
 	mm := m.(Model)
 	if !mm.sprintActive {
 		t.Fatal("sprint should be active after F7")
@@ -766,14 +766,14 @@ func TestSprintGainIncludesUnsavedWords(t *testing.T) {
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 
 	// Open the first scene.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	mm := m.(Model)
 	if mm.editor.FilePath() == "" {
 		t.Skip("no file opened")
 	}
 
 	// Start sprint.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF7})
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyF7})
 	mm = m.(Model)
 	if !mm.sprintActive {
 		t.Fatal("sprint should be active after F7")
@@ -781,11 +781,11 @@ func TestSprintGainIncludesUnsavedWords(t *testing.T) {
 
 	// Type words WITHOUT saving.
 	for _, r := range " one two three four five" {
-		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m, _ = m.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
 	}
 
 	// Stop sprint — gain must include the unsaved words.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF7})
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyF7})
 	mm = m.(Model)
 	if mm.sprintActive {
 		t.Fatal("sprint should be inactive after second F7")
@@ -811,13 +811,13 @@ func TestSearchOpensFromStructuralView(t *testing.T) {
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 
 	// Open corkboard first.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF2})
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyF2})
 	if mm := m.(Model); mm.viewMode != viewCorkboard {
 		t.Fatal("expected corkboard view")
 	}
 
 	// Ctrl+F should open the search overlay from inside the corkboard.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlF})
+	m, _ = m.Update(tea.KeyPressMsg{Code: 'f', Mod: tea.ModCtrl})
 	if mm := m.(Model); !mm.search.active() {
 		t.Error("Ctrl+F should open search from a structural view")
 	}

@@ -3,9 +3,9 @@ package tui
 import (
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // quickNoteAction is the outcome of a key press inside the popup.
@@ -30,7 +30,7 @@ func newQuickNote() quickNoteModel {
 	ti := textinput.New()
 	ti.Placeholder = "capture a thought…"
 	ti.CharLimit = 500
-	ti.Width = 50
+	ti.SetWidth(50)
 	return quickNoteModel{input: ti}
 }
 
@@ -59,7 +59,7 @@ func (q quickNoteModel) value() string {
 }
 
 // update handles a key press inside the popup.
-func (q quickNoteModel) update(msg tea.KeyMsg) (quickNoteModel, quickNoteAction, tea.Cmd) {
+func (q quickNoteModel) update(msg tea.KeyPressMsg) (quickNoteModel, quickNoteAction, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		q.close()

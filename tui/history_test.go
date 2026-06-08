@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/acgh213/chisel/core"
 )
@@ -21,7 +21,7 @@ func TestHistoryErrorClearsOnBack(t *testing.T) {
 		revs: []core.Revision{{Hash: "deadbeefdeadbeef"}},
 	}
 
-	h, action := h.update(tea.KeyMsg{Type: tea.KeyEsc})
+	h, action := h.update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	if action != historyNone {
 		t.Errorf("Esc in diff mode = %v, want historyNone", action)
 	}
@@ -52,16 +52,16 @@ func TestHistoryFlow(t *testing.T) {
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 
 	// Binder is focused with the scene at the cursor — Enter opens it.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 
 	// Type, save (snapshot #1), type more, save (snapshot #2).
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("X")})
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("Y")})
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	m, _ = m.Update(tea.KeyPressMsg{Code: 'X', Text: "X"})
+	m, _ = m.Update(tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
+	m, _ = m.Update(tea.KeyPressMsg{Code: 'Y', Text: "Y"})
+	m, _ = m.Update(tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
 
 	// Open the history browser.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlH})
+	m, _ = m.Update(tea.KeyPressMsg{Code: 'h', Mod: tea.ModCtrl})
 	mm := m.(Model)
 	if !mm.showHistory {
 		t.Fatal("expected history browser to open after Ctrl+H")
@@ -84,8 +84,8 @@ func TestHistoryFlow(t *testing.T) {
 	}
 
 	// Navigate to the older revision and restore it.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	m, _ = m.Update(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	mm = m.(Model)
 
 	if mm.showHistory {

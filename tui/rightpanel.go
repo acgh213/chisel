@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 
 	"github.com/acgh213/chisel/core"
 )
@@ -25,7 +25,7 @@ const (
 type entityDetail struct {
 	header        string // panel section header: "Characters" / "Locations"
 	name          string
-	typeLabel     string   // role (characters) or type (locations)
+	typeLabel     string // role (characters) or type (locations)
 	description   string
 	arc           string   // character arc
 	voice         string   // narrative voice / speech pattern

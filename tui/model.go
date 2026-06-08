@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/acgh213/chisel/core"
 )
@@ -43,10 +43,10 @@ const minRightPanelWidth = 28
 // layoutSizes holds the OUTER box dimensions (including each pane's border)
 // for the binder, editor, and optional right panel, plus the shared pane height.
 type layoutSizes struct {
-	binderW      int
-	editorW      int
-	rightPanelW  int // 0 when the right panel is not shown
-	paneH        int
+	binderW     int
+	editorW     int
+	rightPanelW int // 0 when the right panel is not shown
+	paneH       int
 }
 
 // computeLayout splits a terminal of the given size into pane dimensions. It
@@ -172,13 +172,13 @@ type Model struct {
 	reader readerModel
 
 	// Theme + session stats + sprint timer (Phase 19).
-	theme          string            // active theme name (peach/forest/ocean/midnight)
-	config         core.ChiselConfig // loaded from .chisel.yaml, written on theme change
-	sessionWords   int               // words written this session (accumulated on every save)
-	fileLoadWords  int               // word count at last load/save; baseline for delta
-	wordCount      int               // cached editor word count; updated on content changes
-	sprintActive   bool
-	sprintEnd      time.Time
+	theme           string            // active theme name (peach/forest/ocean/midnight)
+	config          core.ChiselConfig // loaded from .chisel.yaml, written on theme change
+	sessionWords    int               // words written this session (accumulated on every save)
+	fileLoadWords   int               // word count at last load/save; baseline for delta
+	wordCount       int               // cached editor word count; updated on content changes
+	sprintActive    bool
+	sprintEnd       time.Time
 	sprintWordStart int // sessionWords when sprint started
 }
 
@@ -232,7 +232,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		// Backtick opens the quick-note popup from any state (not while search is open).
 		if msg.String() == "`" && !m.quickNote.active() && !m.search.active() {
 			cmd := m.quickNote.open()
@@ -572,18 +572,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // View renders the entire application.
-func (m Model) View() string {
+func (m Model) View() tea.View {
 	if m.quitting {
-		return ""
+		return tea.NewView("")
 	}
 
 	if m.width == 0 {
-		return "Starting..."
+		v := tea.NewView("Starting...")
+		v.AltScreen = true
+		return v
 	}
 
 	// Reading mode is a full-screen takeover — no binder, editor, or status bar.
 	if m.reader.active() {
-		return m.reader.view(m.width, m.height)
+		v := tea.NewView(m.reader.view(m.width, m.height))
+		v.AltScreen = true
+		return v
 	}
 
 	// Pane sizes are set in layout() on WindowSizeMsg; View only reads state.
@@ -677,15 +681,21 @@ func (m Model) View() string {
 
 	// Quick-note popup overlays the existing view; background content stays visible.
 	if m.quickNote.active() {
-		return m.quickNote.view(m.width, m.height, full)
+		v := tea.NewView(m.quickNote.view(m.width, m.height, full))
+		v.AltScreen = true
+		return v
 	}
 
 	// Search overlay likewise sits on top of the existing view.
 	if m.search.active() {
-		return m.search.view(m.width, m.height, full)
+		v := tea.NewView(m.search.view(m.width, m.height, full))
+		v.AltScreen = true
+		return v
 	}
 
-	return full
+	v := tea.NewView(full)
+	v.AltScreen = true
+	return v
 }
 
 // fullHeight returns the usable height above the status bar, floored at 1.
@@ -775,7 +785,7 @@ func (m *Model) openHistory() error {
 }
 
 // updateQuickNote routes a key press to the quick-note popup.
-func (m Model) updateQuickNote(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) updateQuickNote(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	qn, action, cmd := m.quickNote.update(msg)
 	m.quickNote = qn
 
@@ -798,14 +808,14 @@ func (m Model) updateQuickNote(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // updateReader routes a key press to the reading mode view.
-func (m Model) updateReader(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) updateReader(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	m.reader, _ = m.reader.update(msg)
 	return m, nil
 }
 
 // updateSearch routes a key press to the search overlay. On searchOpen it reads
 // the selected path (before close clears results) then opens the scene.
-func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) updateSearch(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	s, action, cmd := m.search.update(msg)
 	m.search = s
 
@@ -824,7 +834,7 @@ func (m Model) updateSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // updateHistory routes a key press to the history browser and applies whatever
 // action it reports (close, or restore the selected revision into the editor).
-func (m Model) updateHistory(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) updateHistory(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	var action historyAction
 	m.history, action = m.history.update(msg)
 
@@ -925,7 +935,7 @@ func (m *Model) enterTimeline() error {
 // updateView routes a key press to the active structural view. F1/Esc returns to
 // the main view; F2/F3 hop directly between the structural views; everything else
 // is forwarded to the active view, whose reported action (open/close) is applied.
-func (m Model) updateView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) updateView(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "f1", "esc":
 		m.viewMode = viewMain
@@ -974,7 +984,7 @@ func (m Model) updateView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // updatePrompt routes a key press to the active binder prompt.
-func (m Model) updatePrompt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) updatePrompt(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch m.prompt.mode {
 	case promptDelete:
 		switch msg.String() {

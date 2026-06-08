@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // twoSceneProject writes two scenes with frontmatter and returns the dir. The
@@ -41,7 +41,7 @@ func TestBinderFocusedAtStartup(t *testing.T) {
 	}
 
 	// j must move the binder cursor without a preceding Tab.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	m, _ = m.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
 	if mm := m.(Model); mm.binder.cursor != 1 {
 		t.Errorf("after j at startup, binder cursor = %d, want 1", mm.binder.cursor)
 	}
@@ -59,7 +59,7 @@ func TestCorkboardFlow(t *testing.T) {
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 
 	// F2 -> corkboard.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF2})
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyF2})
 	mm := m.(Model)
 	if mm.viewMode != viewCorkboard {
 		t.Fatalf("after F2, viewMode = %v, want corkboard", mm.viewMode)
@@ -77,8 +77,8 @@ func TestCorkboardFlow(t *testing.T) {
 	}
 
 	// Navigate to the second card and open it.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRight})
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	mm = m.(Model)
 
 	if mm.viewMode != viewMain {
@@ -103,7 +103,7 @@ func TestOutlinerFlow(t *testing.T) {
 	var m tea.Model = m0
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF3})
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyF3})
 	mm := m.(Model)
 	if mm.viewMode != viewOutliner {
 		t.Fatalf("after F3, viewMode = %v, want outliner", mm.viewMode)
@@ -113,7 +113,7 @@ func TestOutlinerFlow(t *testing.T) {
 	}
 
 	// Enter on the first row opens that scene.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	mm = m.(Model)
 	if mm.viewMode != viewMain {
 		t.Errorf("after Enter, viewMode = %v, want main", mm.viewMode)
@@ -134,7 +134,7 @@ func TestTimelineFlow(t *testing.T) {
 	var m tea.Model = m0
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF4})
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyF4})
 	mm := m.(Model)
 	if mm.viewMode != viewTimeline {
 		t.Fatalf("after F4, viewMode = %v, want viewTimeline", mm.viewMode)
@@ -144,7 +144,7 @@ func TestTimelineFlow(t *testing.T) {
 	}
 
 	// Enter on the first entry should open that scene.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	mm = m.(Model)
 	if mm.viewMode != viewMain {
 		t.Errorf("after Enter, viewMode = %v, want main", mm.viewMode)
@@ -165,20 +165,20 @@ func TestTimelineHop(t *testing.T) {
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 
 	// Open timeline, then hop to corkboard via F2.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF4})
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF2})
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyF4})
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyF2})
 	if mm := m.(Model); mm.viewMode != viewCorkboard {
 		t.Errorf("F4→F2: viewMode = %v, want corkboard", mm.viewMode)
 	}
 
 	// Hop back to timeline via F4.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF4})
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyF4})
 	if mm := m.(Model); mm.viewMode != viewTimeline {
 		t.Errorf("F2→F4: viewMode = %v, want timeline", mm.viewMode)
 	}
 
 	// Hop to outliner via F3.
-	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyF3})
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyF3})
 	if mm := m.(Model); mm.viewMode != viewOutliner {
 		t.Errorf("F4→F3: viewMode = %v, want outliner", mm.viewMode)
 	}
@@ -190,7 +190,7 @@ func TestTimelineHop(t *testing.T) {
 func TestStructuralViewsFitTerminal(t *testing.T) {
 	dir := twoSceneProject(t)
 	sizes := []struct{ w, h int }{{80, 24}, {120, 40}, {60, 20}, {40, 15}}
-	keys := []tea.KeyType{tea.KeyF2, tea.KeyF3, tea.KeyF4}
+	keys := []rune{tea.KeyF2, tea.KeyF3, tea.KeyF4}
 
 	for _, k := range keys {
 		for _, s := range sizes {
@@ -200,9 +200,9 @@ func TestStructuralViewsFitTerminal(t *testing.T) {
 			}
 			var m tea.Model = m0
 			m, _ = m.Update(tea.WindowSizeMsg{Width: s.w, Height: s.h})
-			m, _ = m.Update(tea.KeyMsg{Type: k})
+			m, _ = m.Update(tea.KeyPressMsg{Code: k})
 
-			view := m.View()
+			view := m.View().Content
 			lines := strings.Split(view, "\n")
 			if len(lines) > s.h {
 				t.Errorf("key %v %dx%d: %d lines, exceeds height %d", k, s.w, s.h, len(lines), s.h)
