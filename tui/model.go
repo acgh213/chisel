@@ -31,6 +31,8 @@ const (
 	viewCorkboard
 	viewOutliner
 	viewTimeline
+	viewHeatmap
+	viewStats
 )
 
 // minBinderWidth is the narrowest the binder pane may shrink to before the
@@ -146,6 +148,8 @@ type Model struct {
 	corkboard corkboardModel
 	outliner  outlinerModel
 	timeline  timelineModel
+	heatmap   heatmapModel
+	stats     statsModel
 
 	// pandocPath is the resolved path to the pandoc binary, or "" if not
 	// found. Detected once in NewModel; gates the .docx export offer.
@@ -184,6 +188,10 @@ type Model struct {
 	sprintActive    bool
 	sprintEnd       time.Time
 	sprintWordStart int // sessionWords when sprint started
+
+	// Streak badge (issue #44). Cached from git history; refreshed on save
+	// and scene open. Empty (zero value) when git is unavailable.
+	streak core.Streak
 }
 
 // NewModel creates a new chisel root model for the given project directory.
@@ -382,6 +390,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// Refresh the panel — the saved file may be a character
 					// whose display details just changed.
 					m.syncRightPanel()
+					m.refreshStreak()
 				}
 				cmds = append(cmds, m.setStatus(saveMsg, 3))
 			} else {
@@ -521,6 +530,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, m.setStatus(fmt.Sprintf("Theme: %s", m.theme), 2))
 			}
 
+		case "f9":
+			if err := m.enterHeatmap(); err != nil {
+				cmds = append(cmds, m.setStatus(fmt.Sprintf("Error opening heatmap: %v", err), 3))
+			}
+
+		case "f10":
+			if err := m.enterStats(); err != nil {
+				cmds = append(cmds, m.setStatus(fmt.Sprintf("Error opening stats: %v", err), 3))
+			}
+
 		default:
 			// Safety net: any key without an explicit case above is forwarded
 			// to the focused pane. Keys that DO have their own case (e.g.
@@ -639,6 +658,12 @@ func (m Model) View() tea.View {
 	case m.viewMode == viewTimeline:
 		body = m.timeline.view()
 
+	case m.viewMode == viewHeatmap:
+		body = m.heatmap.view()
+
+	case m.viewMode == viewStats:
+		body = m.stats.view()
+
 	default:
 		if m.showRightPanel {
 			body = lipgloss.JoinHorizontal(
@@ -697,6 +722,8 @@ func (m *Model) layout() {
 	m.corkboard.SetSize(m.width, fullH)
 	m.outliner.SetSize(m.width, fullH)
 	m.timeline.SetSize(m.width, fullH)
+	m.heatmap.SetSize(m.width, fullH)
+	m.stats.SetSize(m.width, fullH)
 }
 
 // syncRightPanel updates the right panel's content to match the current binder
@@ -870,6 +897,7 @@ func (m *Model) openScene(path string) tea.Cmd {
 	m.focus = PaneEditor
 	m.binder.Focus(false)
 	m.editor.Focus(true)
+	m.refreshStreak()
 	// Init() arms the cursor blink on focus gain.
 	return tea.Batch(m.setStatus(fmt.Sprintf("Opened %s", filepath.Base(path)), 2), m.editor.Init())
 }
@@ -908,6 +936,42 @@ func (m *Model) enterTimeline() error {
 	return nil
 }
 
+// enterHeatmap loads the commit heatmap and shows it.
+func (m *Model) enterHeatmap() error {
+	backend, err := m.ensureBackend()
+	if err != nil {
+		return err
+	}
+	gb, ok := backend.(*core.GitBackend)
+	if !ok {
+		return fmt.Errorf("heatmap requires git backend")
+	}
+	if err := m.heatmap.open(gb); err != nil {
+		return err
+	}
+	m.heatmap.SetSize(m.width, m.fullHeight())
+	m.viewMode = viewHeatmap
+	return nil
+}
+
+// enterStats loads the word-count stats and shows them.
+func (m *Model) enterStats() error {
+	backend, err := m.ensureBackend()
+	if err != nil {
+		return err
+	}
+	gb, ok := backend.(*core.GitBackend)
+	if !ok {
+		return fmt.Errorf("stats requires git backend")
+	}
+	if err := m.stats.open(gb); err != nil {
+		return err
+	}
+	m.stats.SetSize(m.width, m.fullHeight())
+	m.viewMode = viewStats
+	return nil
+}
+
 // updateView routes a key press to the active structural view. F1/Esc returns to
 // the main view; F2/F3 hop directly between the structural views; everything else
 // is forwarded to the active view, whose reported action (open/close) is applied.
@@ -931,6 +995,16 @@ func (m Model) updateView(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, m.setStatus(fmt.Sprintf("Error opening timeline: %v", err), 3)
 		}
 		return m, nil
+	case "f9":
+		if err := m.enterHeatmap(); err != nil {
+			return m, m.setStatus(fmt.Sprintf("Error opening heatmap: %v", err), 3)
+		}
+		return m, nil
+	case "f10":
+		if err := m.enterStats(); err != nil {
+			return m, m.setStatus(fmt.Sprintf("Error opening stats: %v", err), 3)
+		}
+		return m, nil
 	}
 
 	var action viewAction
@@ -945,6 +1019,10 @@ func (m Model) updateView(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case viewTimeline:
 		m.timeline, action = m.timeline.update(msg)
 		path = m.timeline.selected()
+	case viewHeatmap:
+		m.heatmap, action = m.heatmap.update(msg)
+	case viewStats:
+		m.stats, action = m.stats.update(msg)
 	}
 
 	switch action {
@@ -1095,6 +1173,23 @@ func (m Model) executePrompt() (tea.Model, tea.Cmd) {
 	}
 
 	return m, tea.Batch(cmds...)
+}
+
+// refreshStreak recomputes the writing streak from git history. It is a no-op
+// when the git backend has not been opened yet (don't init git just for streak).
+func (m *Model) refreshStreak() {
+	if m.revBackend == nil {
+		return
+	}
+	gb, ok := m.revBackend.(*core.GitBackend)
+	if !ok {
+		return
+	}
+	days, err := core.ActiveDays(gb)
+	if err != nil {
+		return
+	}
+	m.streak = core.ComputeStreak(days)
 }
 
 // setStatus sets a timed status-bar message and returns the tick command to

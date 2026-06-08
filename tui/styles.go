@@ -55,6 +55,14 @@ var (
 	TreeSelectedStyle lipgloss.Style
 	TreeFolderStyle   lipgloss.Style
 	TreeFileStyle     lipgloss.Style
+
+	HeatmapCellStyle0 lipgloss.Style // no activity
+	HeatmapCellStyle1 lipgloss.Style // low activity
+	HeatmapCellStyle2 lipgloss.Style // medium activity
+	HeatmapCellStyle3 lipgloss.Style // high activity
+	HeatmapLabelStyle lipgloss.Style // month/day labels
+	DetailHeaderStyle lipgloss.Style // detail overlay header
+	DetailTextStyle   lipgloss.Style // detail overlay text
 )
 
 func init() { rebuildStyles() }
@@ -257,4 +265,12 @@ func rebuildStyles() {
 
 	TreeFileStyle = lipgloss.NewStyle().
 		Foreground(ColorFg)
+
+	HeatmapCellStyle0 = lipgloss.NewStyle().Foreground(ColorDim)
+	HeatmapCellStyle1 = lipgloss.NewStyle().Foreground(ColorMuted)
+	HeatmapCellStyle2 = lipgloss.NewStyle().Foreground(ColorGreen)
+	HeatmapCellStyle3 = lipgloss.NewStyle().Foreground(ColorAccent)
+	HeatmapLabelStyle = lipgloss.NewStyle().Foreground(ColorMuted)
+	DetailHeaderStyle = lipgloss.NewStyle().Foreground(ColorAccent).Bold(true)
+	DetailTextStyle   = lipgloss.NewStyle().Foreground(ColorFg)
 }

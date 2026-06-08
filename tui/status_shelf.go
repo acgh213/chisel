@@ -52,6 +52,9 @@ func (m Model) stateRowText() string {
 			parts = append(parts, fmt.Sprintf("Today +%d", m.sessionWords))
 		}
 	}
+	if m.streak.Current > 0 {
+		parts = append(parts, fmt.Sprintf("\U0001f525 %d days", m.streak.Current))
+	}
 	return strings.Join(parts, "  |  ")
 }
 
@@ -65,6 +68,10 @@ func (m Model) stateContextText() string {
 		return m.outliner.stateTitle()
 	case m.viewMode == viewTimeline:
 		return m.timeline.stateTitle()
+	case m.viewMode == viewHeatmap:
+		return m.heatmap.stateTitle()
+	case m.viewMode == viewStats:
+		return m.stats.stateTitle()
 	case m.editor.FilePath() != "":
 		mod := ""
 		if m.editor.IsModified() {
@@ -93,6 +100,10 @@ func (m Model) hintRowText() string {
 		return "Outliner: up/down navigate  left/right collapse/expand  Enter open  F2 corkboard  F4 timeline  Esc back  ? help"
 	case m.viewMode == viewTimeline:
 		return "Timeline: up/down navigate  Enter open  F2 corkboard  F3 outliner  Esc back  ? help"
+	case m.viewMode == viewHeatmap:
+		return "Heatmap: arrows navigate  Enter detail  Esc back  ? help"
+	case m.viewMode == viewStats:
+		return "Stats: j/k navigate  Esc close  ? help"
 	case m.focus == PaneBinder:
 		return "Binder: Tab switch  n new  N folder  r rename  d delete  ? help"
 	default:

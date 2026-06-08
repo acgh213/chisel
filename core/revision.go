@@ -135,6 +135,37 @@ func (gb *GitBackend) Log(path string) ([]Revision, error) {
 	return revs, nil
 }
 
+// AllLog returns all commits across the entire repository (no path filter),
+// newest first. If since is non-zero, only commits after that time are
+// returned. This is used by the stats/heatmap features.
+func (gb *GitBackend) AllLog(since time.Time) ([]Revision, error) {
+	opts := &git.LogOptions{
+		Order: git.LogOrderCommitterTime,
+	}
+	if !since.IsZero() {
+		opts.Since = &since
+	}
+	iter, err := gb.repo.Log(opts)
+	if err != nil {
+		return nil, fmt.Errorf("reading all log: %w", err)
+	}
+	defer iter.Close()
+
+	var revs []Revision
+	err = iter.ForEach(func(c *object.Commit) error {
+		revs = append(revs, Revision{
+			Hash:      c.Hash.String(),
+			Timestamp: c.Author.When,
+			Message:   strings.TrimSpace(c.Message),
+		})
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("iterating commits: %w", err)
+	}
+	return revs, nil
+}
+
 // Diff returns a unified diff of path between rev1 (older) and rev2 (newer).
 func (gb *GitBackend) Diff(path, rev1, rev2 string) (string, error) {
 	tree1, err := gb.treeAt(rev1)
