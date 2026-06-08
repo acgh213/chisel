@@ -13,11 +13,13 @@ import (
 // statsModel is a word-count bar chart view showing daily word totals parsed
 // from git commit history.
 type statsModel struct {
-	days   []core.DayCount
-	cursor int
-	offset int
-	width  int
-	height int
+	days          []core.DayCount
+	cursor        int
+	offset        int
+	width         int
+	height        int
+	projectTarget int // from config; 0 = no target
+	projectWords  int // total project words at open time
 }
 
 func (s *statsModel) open(gb *core.GitBackend) error {
@@ -81,14 +83,34 @@ func (s statsModel) stateTitle() string {
 func (s statsModel) view() string {
 	header := ViewHeaderStyle.Render(truncate(s.stateTitle(), s.width))
 
+	lines := []string{header}
+
+	// Project target progress bar (issue #31).
+	if s.projectTarget > 0 && s.projectWords > 0 {
+		pct := s.projectWords * 100 / s.projectTarget
+		barW := s.width - 4
+		if barW < 10 {
+			barW = 10
+		}
+		filled := s.projectWords * barW / s.projectTarget
+		if filled < 1 {
+			filled = 1
+		}
+		bar := strings.Repeat("█", filled) + strings.Repeat("░", barW-filled)
+		label := fmt.Sprintf("%s / %s (%d%%)", formatNum(s.projectWords), formatNum(s.projectTarget), pct)
+		lines = append(lines, "")
+		lines = append(lines, lipgloss.NewStyle().Foreground(ColorGreen).Render(bar))
+		lines = append(lines, lipgloss.NewStyle().Foreground(ColorMuted).Render(label))
+	}
+
 	if len(s.days) == 0 {
 		hint := lipgloss.NewStyle().Foreground(ColorDim).Render(
 			"(no word-count history — save some scenes first)")
-		return lipgloss.JoinVertical(lipgloss.Left, header, "", hint)
+		lines = append(lines, "", hint)
+		return strings.Join(lines, "\n")
 	}
 
 	rows := s.bodyRows()
-	lines := []string{header}
 
 	for i := s.offset; i < len(s.days) && i < s.offset+rows; i++ {
 		lines = append(lines, s.renderRow(i))

@@ -182,3 +182,29 @@ func TestDailyWordCountsFromGit(t *testing.T) {
 		t.Errorf("total = %d, want 9", counts[0].Total)
 	}
 }
+
+func TestProjectWordCount(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a scenes directory with two scene files.
+	scenesDir := filepath.Join(dir, "scenes")
+	if err := os.MkdirAll(scenesDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(scenesDir, "a.md"),
+		[]byte("# A\n\nOne two three four five.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(scenesDir, "b.md"),
+		[]byte("# B\n\nSix seven eight nine ten eleven.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	total, err := ProjectWordCount(dir)
+	if err != nil {
+		t.Fatalf("ProjectWordCount: %v", err)
+	}
+	if total != 15 { // 7 (including "# A") + 8 (including "# B")
+		t.Errorf("ProjectWordCount = %d, want 15", total)
+	}
+}

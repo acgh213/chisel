@@ -11,8 +11,9 @@ import (
 // .chisel.yaml at the project root. The "filesystem is the project" rule
 // applies to scene/content data only; app preferences like theme live here.
 type ChiselConfig struct {
-	Theme     string `yaml:"theme,omitempty"`
-	DailyGoal int    `yaml:"daily_goal,omitempty"`
+	Theme         string `yaml:"theme,omitempty"`
+	DailyGoal     int    `yaml:"daily_goal,omitempty"`
+	ProjectTarget int    `yaml:"project_target,omitempty"`
 }
 
 const configFileName = ".chisel.yaml"

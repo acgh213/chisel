@@ -53,7 +53,11 @@ func (m Model) stateRowText() string {
 		}
 	}
 	if m.streak.Current > 0 {
-		parts = append(parts, fmt.Sprintf("\U0001f525 %d days", m.streak.Current))
+		parts = append(parts, fmt.Sprintf("🔥 %d days", m.streak.Current))
+	}
+	if m.config.ProjectTarget > 0 && m.projectWords > 0 {
+		pct := m.projectWords * 100 / m.config.ProjectTarget
+		parts = append(parts, fmt.Sprintf("📊 %s/%s (%d%%)", formatNum(m.projectWords), formatNum(m.config.ProjectTarget), pct))
 	}
 	return strings.Join(parts, "  |  ")
 }
@@ -116,4 +120,21 @@ func promptHint(mode promptMode) string {
 		return "y confirm  Esc cancel"
 	}
 	return "Enter confirm  Esc cancel"
+}
+
+// formatNum formats an integer with comma separators (e.g. 23412 → "23,412").
+func formatNum(n int) string {
+	s := fmt.Sprintf("%d", n)
+	if len(s) <= 3 {
+		return s
+	}
+	var parts []string
+	for len(s) > 3 {
+		parts = append([]string{s[len(s)-3:]}, parts...)
+		s = s[:len(s)-3]
+	}
+	if s != "" {
+		parts = append([]string{s}, parts...)
+	}
+	return strings.Join(parts, ",")
 }

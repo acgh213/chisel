@@ -192,6 +192,10 @@ type Model struct {
 	// Streak badge (issue #44). Cached from git history; refreshed on save
 	// and scene open. Empty (zero value) when git is unavailable.
 	streak core.Streak
+
+	// Project word count (issue #31). Total words across all scenes,
+	// refreshed on save and scene open.
+	projectWords int
 }
 
 // NewModel creates a new chisel root model for the given project directory.
@@ -387,10 +391,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if serr := m.snapshot(path, commitMsg); serr != nil {
 						saveMsg = fmt.Sprintf("Saved %s (snapshot failed: %v)", filepath.Base(path), serr)
 					}
-					// Refresh the panel — the saved file may be a character
-					// whose display details just changed.
+				// Refresh the panel — the saved file may be a character
+				// whose display details just changed.
 					m.syncRightPanel()
 					m.refreshStreak()
+					m.refreshProjectWords()
 				}
 				cmds = append(cmds, m.setStatus(saveMsg, 3))
 			} else {
@@ -898,6 +903,7 @@ func (m *Model) openScene(path string) tea.Cmd {
 	m.binder.Focus(false)
 	m.editor.Focus(true)
 	m.refreshStreak()
+	m.refreshProjectWords()
 	// Init() arms the cursor blink on focus gain.
 	return tea.Batch(m.setStatus(fmt.Sprintf("Opened %s", filepath.Base(path)), 2), m.editor.Init())
 }
@@ -967,6 +973,8 @@ func (m *Model) enterStats() error {
 	if err := m.stats.open(gb); err != nil {
 		return err
 	}
+	m.stats.projectTarget = m.config.ProjectTarget
+	m.stats.projectWords = m.projectWords
 	m.stats.SetSize(m.width, m.fullHeight())
 	m.viewMode = viewStats
 	return nil
@@ -1190,6 +1198,19 @@ func (m *Model) refreshStreak() {
 		return
 	}
 	m.streak = core.ComputeStreak(days)
+}
+
+// refreshProjectWords recomputes the total project word count. It is a no-op
+// when the project root is empty (e.g. during tests).
+func (m *Model) refreshProjectWords() {
+	if m.root == "" {
+		return
+	}
+	total, err := core.ProjectWordCount(m.root)
+	if err != nil {
+		return
+	}
+	m.projectWords = total
 }
 
 // setStatus sets a timed status-bar message and returns the tick command to

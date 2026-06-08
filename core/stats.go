@@ -170,3 +170,15 @@ func DailyWordCounts(gb *GitBackend) ([]DayCount, error) {
 	})
 	return counts, nil
 }
+
+// ProjectWordCount returns the total word count across all scene files in the
+// project (excluding exports/, characters/, locations/, notes/, hidden dirs).
+func ProjectWordCount(root string) (int, error) {
+	total := 0
+	err := walkMarkdown(root, func(path string) error {
+		info := ReadSceneInfo(path)
+		total += info.WordCount
+		return nil
+	})
+	return total, err
+}
