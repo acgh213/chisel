@@ -72,6 +72,10 @@ func (o *outlinerModel) SetSize(w, h int) {
 	o.height = h
 }
 
+func (o outlinerModel) stateTitle() string {
+	return fmt.Sprintf("Outliner - %s (%d items)", folderDisplayName(o.root, o.root), len(o.flat))
+}
+
 // selected returns the path of the node under the cursor if it's a scene, or "".
 func (o outlinerModel) selected() string {
 	if o.cursor < 0 || o.cursor >= len(o.flat) {

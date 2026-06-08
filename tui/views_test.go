@@ -75,6 +75,9 @@ func TestCorkboardFlow(t *testing.T) {
 	if mm.corkboard.cards[0].WordCount != 3 {
 		t.Errorf("Alpha word count = %d, want 3", mm.corkboard.cards[0].WordCount)
 	}
+	if view := m.View().Content; !strings.Contains(view, "Corkboard -") || !strings.Contains(view, "(2 scenes)") {
+		t.Errorf("corkboard shelf should show structural state context, got:\n%s", view)
+	}
 
 	// Navigate to the second card and open it.
 	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
@@ -111,6 +114,9 @@ func TestOutlinerFlow(t *testing.T) {
 	if len(mm.outliner.flat) != 2 {
 		t.Fatalf("outliner has %d rows, want 2", len(mm.outliner.flat))
 	}
+	if view := m.View().Content; !strings.Contains(view, "Outliner -") || !strings.Contains(view, "(2 items)") {
+		t.Errorf("outliner shelf should show structural state context, got:\n%s", view)
+	}
 
 	// Enter on the first row opens that scene.
 	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -141,6 +147,9 @@ func TestTimelineFlow(t *testing.T) {
 	}
 	if len(mm.timeline.entries) != 2 {
 		t.Fatalf("timeline has %d entries, want 2", len(mm.timeline.entries))
+	}
+	if view := m.View().Content; !strings.Contains(view, "Timeline -") || !strings.Contains(view, "(2 scenes)") {
+		t.Errorf("timeline shelf should show structural state context, got:\n%s", view)
 	}
 
 	// Enter on the first entry should open that scene.

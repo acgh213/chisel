@@ -77,6 +77,17 @@ func (h *historyModel) SetSize(w, height int) {
 	h.height = height
 }
 
+func (h historyModel) stateTitle() string {
+	if h.mode == historyDiff {
+		hash := h.selectedHash()
+		if hash == "" {
+			return "Diff"
+		}
+		return fmt.Sprintf("Diff - %s", core.ShortHash(hash))
+	}
+	return fmt.Sprintf("History - %s (%d snapshots)", h.name, len(h.revs))
+}
+
 // selectedHash returns the hash of the currently selected revision, or "".
 func (h historyModel) selectedHash() string {
 	if h.cursor < 0 || h.cursor >= len(h.revs) {

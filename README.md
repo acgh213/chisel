@@ -33,7 +33,7 @@ Templates: `minimal` (README only), `novel` (scenes/ + characters/ + locations/ 
 - **Quick-note** — backtick opens a floating popup from any state. Jot a thought, Enter saves it to `notes/scratch.md`.
 - **Full-text search** — Ctrl+F searches all scenes (body text). Browse results, Enter opens the match.
 - **Reading mode** — F6 opens the current scene full-screen, word-wrapped. No chrome. Just your words.
-- **Themes** — four dark themes (peach, forest, ocean, midnight). Ctrl+T cycles, persists to `.chisel.yaml`.
+- **Themes** — four dark themes (peach, forest, ocean, midnight). F8 cycles, persists to `.chisel.yaml`.
 - **Sprint timer** — F7 starts a 25-minute pomodoro. Status bar shows countdown and words written. Works from any view.
 - **Session word count** — accumulated across saves and file switches. Shown as `+N today` (or `+N/G today` with a daily goal).
 - **Export** — compile your project to `exports/manuscript.md` (Ctrl+E). Optional `.docx` via pandoc if installed.
@@ -55,9 +55,10 @@ Templates: `minimal` (README only), `novel` (scenes/ + characters/ + locations/ 
 | F5 | Toggle world panel |
 | F6 | Reading mode (scene must be open) |
 | F7 | Start/stop sprint timer |
-| Ctrl+T | Cycle theme |
+| F8 | Cycle theme |
 | Ctrl+F | Full-text search |
 | ` (backtick) | Quick-note popup |
+| ? | Help / full keymap (non-text-input states) |
 | Ctrl+Q / Esc | Quit (second press confirms if unsaved) |
 
 ### binder (focused)

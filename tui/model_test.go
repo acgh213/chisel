@@ -13,8 +13,8 @@ import (
 // TestComputeLayoutSumsToWidth is the "panes tile the terminal exactly"
 // guarantee, asserted rather than eyeballed. For widths at or above
 // minBinderWidth+1 (21), the binder keeps its minimum and the editor takes the
-// rest, so the outer widths sum to the terminal width, the panes leave one row
-// for the status bar, and the binder never drops below minBinderWidth. (Below
+// rest, so the outer widths sum to the terminal width, the panes leave two rows
+// for the bottom shelf, and the binder never drops below minBinderWidth. (Below
 // that threshold the binder yields columns to the editor — covered by
 // TestComputeLayoutSumInvariant.)
 func TestComputeLayoutSumsToWidth(t *testing.T) {
@@ -34,8 +34,8 @@ func TestComputeLayoutSumsToWidth(t *testing.T) {
 			t.Errorf("computeLayout(%d,%d): binderW(%d)+editorW(%d)=%d, want %d",
 				c.w, c.h, l.binderW, l.editorW, l.binderW+l.editorW, c.w)
 		}
-		if l.paneH != c.h-1 {
-			t.Errorf("computeLayout(%d,%d): paneH=%d, want %d", c.w, c.h, l.paneH, c.h-1)
+		if l.paneH != c.h-2 {
+			t.Errorf("computeLayout(%d,%d): paneH=%d, want %d", c.w, c.h, l.paneH, c.h-2)
 		}
 		if l.binderW < minBinderWidth {
 			t.Errorf("computeLayout(%d,%d): binderW=%d below minBinderWidth=%d",
@@ -154,6 +154,58 @@ func TestViewFitsTerminal(t *testing.T) {
 	}
 }
 
+func TestBottomShelfRendersStateAndHintRows(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "scene.md"),
+		[]byte("# A Scene\n\nSome prose with several words on a line.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	m0, err := NewModel(dir)
+	if err != nil {
+		t.Fatalf("NewModel: %v", err)
+	}
+	var m tea.Model = m0
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+
+	view := m.View().Content
+	lines := strings.Split(view, "\n")
+	if len(lines) != 24 {
+		t.Fatalf("view rendered %d lines, want exactly terminal height 24", len(lines))
+	}
+	stateRow := lines[len(lines)-2]
+	hintRow := lines[len(lines)-1]
+	if !strings.Contains(stateRow, "scene.md") || !strings.Contains(stateRow, "words") {
+		t.Errorf("state row should show file and word context, got %q", stateRow)
+	}
+	if !strings.Contains(hintRow, "Editor:") || !strings.Contains(hintRow, "^S save") {
+		t.Errorf("hint row should show compact editor hints, got %q", hintRow)
+	}
+}
+
+func TestSprintShelfUsesCompactStateAndShrunkHints(t *testing.T) {
+	dir := twoSceneProject(t)
+	m0, err := NewModel(dir)
+	if err != nil {
+		t.Fatalf("NewModel: %v", err)
+	}
+	var m tea.Model = m0
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyF7})
+
+	view := m.View().Content
+	if !strings.Contains(view, "Sprint") {
+		t.Fatalf("sprint shelf should include compact sprint state, got:\n%s", view)
+	}
+	if strings.Contains(view, "█") || strings.Contains(view, "░") {
+		t.Errorf("sprint shelf should not include the old inline block progress bar, got:\n%s", view)
+	}
+	if !strings.Contains(view, "F7 stop sprint") || !strings.Contains(view, "? help") {
+		t.Errorf("sprint hint row should shrink to stop/help controls, got:\n%s", view)
+	}
+}
+
 // TestComputeLayoutThreePaneSumsToWidth asserts the three-pane (right panel
 // open) split tiles the terminal exactly and all dimensions are positive for
 // typical terminal sizes.
@@ -225,6 +277,79 @@ func TestQuickNoteEscCancels(t *testing.T) {
 
 	if mm := m.(Model); mm.quickNote.active() {
 		t.Error("quick-note popup should be closed after Esc")
+	}
+}
+
+func TestQuestionMarkOpensAndClosesHelpFromBinder(t *testing.T) {
+	dir := twoSceneProject(t)
+	m0, err := NewModel(dir)
+	if err != nil {
+		t.Fatalf("NewModel: %v", err)
+	}
+	var m tea.Model = m0
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+
+	m, _ = m.Update(tea.KeyPressMsg{Code: '?', Text: "?"})
+	mm := m.(Model)
+	if !mm.help.active() {
+		t.Fatal("? should open help when binder focus owns the keyboard")
+	}
+	if view := m.View().Content; !strings.Contains(view, "Chisel Help") || !strings.Contains(view, "Global") {
+		t.Errorf("help view should render keymap content, got:\n%s", view)
+	}
+
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
+	mm = m.(Model)
+	if mm.help.active() {
+		t.Error("Esc should close help")
+	}
+	if mm.quitting {
+		t.Error("Esc from help must not quit the app")
+	}
+}
+
+func TestQuestionMarkOpensHelpFromStructuralView(t *testing.T) {
+	dir := twoSceneProject(t)
+	m0, err := NewModel(dir)
+	if err != nil {
+		t.Fatalf("NewModel: %v", err)
+	}
+	var m tea.Model = m0
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyF2})
+	m, _ = m.Update(tea.KeyPressMsg{Code: '?', Text: "?"})
+
+	mm := m.(Model)
+	if !mm.help.active() {
+		t.Fatal("? should open help from structural views")
+	}
+	if mm.viewMode != viewCorkboard {
+		t.Errorf("opening help should preserve structural view mode, got %v", mm.viewMode)
+	}
+}
+
+func TestQuestionMarkInEditorInsertsLiteralCharacter(t *testing.T) {
+	dir := twoSceneProject(t)
+	m0, err := NewModel(dir)
+	if err != nil {
+		t.Fatalf("NewModel: %v", err)
+	}
+	var m tea.Model = m0
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	mm := m.(Model)
+	if mm.focus != PaneEditor {
+		t.Fatalf("opening a scene should focus editor, got %v", mm.focus)
+	}
+	before := mm.editor.Content()
+
+	m, _ = m.Update(tea.KeyPressMsg{Code: '?', Text: "?"})
+	mm = m.(Model)
+	if mm.help.active() {
+		t.Fatal("? in editor focus should not open help")
+	}
+	if got := mm.editor.Content(); got == before || !strings.Contains(got, "?") {
+		t.Errorf("? in editor focus should insert literal question mark; before=%q after=%q", before, got)
 	}
 }
 

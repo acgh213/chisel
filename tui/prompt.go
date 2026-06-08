@@ -17,8 +17,8 @@ const (
 	promptNote                 // editing the Notes metadata field of a scene
 )
 
-// binderPrompt is the inline bottom-bar input used for binder CRUD operations.
-// It occupies the same one-row slot as the status bar and disappears when done.
+// binderPrompt is the inline bottom-shelf input used for binder CRUD operations.
+// It occupies the prompt row of the shelf and disappears when done.
 // Built as its own struct so the quick-note popup and right-panel can reuse the
 // same infrastructure without touching the root model's key switch.
 type binderPrompt struct {

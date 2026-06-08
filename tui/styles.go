@@ -26,6 +26,11 @@ var (
 	BinderStyle        lipgloss.Style
 	EditorStyle        lipgloss.Style
 	StatusBarStyle     lipgloss.Style
+	HintBarStyle       lipgloss.Style
+	HelpStyle          lipgloss.Style
+	HelpHeaderStyle    lipgloss.Style
+	HelpSectionStyle   lipgloss.Style
+	HelpKeyStyle       lipgloss.Style
 	HistoryStyle       lipgloss.Style
 	HistoryHeaderStyle lipgloss.Style
 	DiffAddStyle       lipgloss.Style
@@ -161,6 +166,28 @@ func rebuildStyles() {
 		Background(ColorHighlight).
 		Foreground(ColorMuted).
 		Padding(0, 1)
+
+	HintBarStyle = lipgloss.NewStyle().
+		Background(ColorBg).
+		Foreground(ColorDim).
+		Padding(0, 1)
+
+	HelpStyle = lipgloss.NewStyle().
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderForeground(ColorAccent).
+		Background(ColorBg).
+		Padding(0, 2)
+
+	HelpHeaderStyle = lipgloss.NewStyle().
+		Foreground(ColorAccent).
+		Bold(true)
+
+	HelpSectionStyle = lipgloss.NewStyle().
+		Foreground(ColorMuted).
+		Bold(true)
+
+	HelpKeyStyle = lipgloss.NewStyle().
+		Foreground(ColorAccent)
 
 	HistoryStyle = lipgloss.NewStyle().
 		BorderStyle(lipgloss.NormalBorder()).
