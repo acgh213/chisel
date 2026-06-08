@@ -32,6 +32,7 @@ const (
 	viewOutliner
 	viewTimeline
 	viewHeatmap
+	viewStats
 )
 
 // minBinderWidth is the narrowest the binder pane may shrink to before the
@@ -147,6 +148,7 @@ type Model struct {
 	outliner  outlinerModel
 	timeline  timelineModel
 	heatmap   heatmapModel
+	stats     statsModel
 
 	// pandocPath is the resolved path to the pandoc binary, or "" if not
 	// found. Detected once in NewModel; gates the .docx export offer.
@@ -621,19 +623,23 @@ func (m Model) View() string {
 
 	case m.viewMode == viewCorkboard:
 		body = m.corkboard.view()
-		statusParts = append(statusParts, "[Corkboard]  ←→↑↓ Navigate  Enter=Open  F3=Outliner  F4=Timeline  F9=Heatmap  Esc=Back")
+		statusParts = append(statusParts, "[Corkboard]  ←→↑↓ Navigate  Enter=Open  F3=Outliner  F4=Timeline  F9=Heatmap  F10=Stats  Esc=Back")
 
 	case m.viewMode == viewOutliner:
 		body = m.outliner.view()
-		statusParts = append(statusParts, "[Outliner]  ↑/↓ Navigate  ←/→ Collapse/Expand  Enter=Open  F2=Corkboard  F4=Timeline  F9=Heatmap  Esc=Back")
+		statusParts = append(statusParts, "[Outliner]  ↑/↓ Navigate  ←/→ Collapse/Expand  Enter=Open  F2=Corkboard  F4=Timeline  F9=Heatmap  F10=Stats  Esc=Back")
 
 	case m.viewMode == viewTimeline:
 		body = m.timeline.view()
-		statusParts = append(statusParts, "[Timeline]  ↑/↓ Navigate  Enter=Open  F2=Corkboard  F3=Outliner  F9=Heatmap  Esc=Back")
+		statusParts = append(statusParts, "[Timeline]  ↑/↓ Navigate  Enter=Open  F2=Corkboard  F3=Outliner  F9=Heatmap  F10=Stats  Esc=Back")
 
 	case m.viewMode == viewHeatmap:
 		body = m.heatmap.view()
 		statusParts = append(statusParts, "[Heatmap]  ←→↑↓ Navigate  Enter=Details  Esc=Back")
+
+	case m.viewMode == viewStats:
+		body = m.stats.view()
+		statusParts = append(statusParts, "[Stats]  ↑/↓ Navigate  Esc=Back")
 
 	default:
 		if m.showRightPanel {
@@ -664,9 +670,9 @@ func (m Model) View() string {
 		}
 
 		if m.focus == PaneBinder {
-			statusParts = append(statusParts, "[Binder]  Tab=Switch  n=New  N=Folder  r=Rename  d=Delete  F2=Corkboard  F3=Outliner  F4=Timeline  F5=Panel  F6=Read  F7=Sprint  F8=Theme  F9=Heatmap  ^F=Search")
+			statusParts = append(statusParts, "[Binder]  Tab=Switch  n=New  N=Folder  r=Rename  d=Delete  F2=Corkboard  F3=Outliner  F4=Timeline  F5=Panel  F6=Read  F7=Sprint  F8=Theme  F9=Heatmap  F10=Stats  ^F=Search")
 		} else {
-			statusParts = append(statusParts, "[Editor]  Tab=Switch  ^S=Save  ^N=New  F2=Corkboard  F4=Timeline  F5=Panel  F6=Read  F7=Sprint  F9=Heatmap  ^T=Theme  ^E=Export  ^F=Search")
+			statusParts = append(statusParts, "[Editor]  Tab=Switch  ^S=Save  ^N=New  F2=Corkboard  F4=Timeline  F5=Panel  F6=Read  F7=Sprint  F9=Heatmap  F10=Stats  ^T=Theme  ^E=Export  ^F=Search")
 		}
 	}
 
@@ -991,6 +997,28 @@ func (m *Model) enterHeatmap() error {
 	return nil
 }
 
+// enterStats loads the word-count history bar chart and shows it.
+func (m *Model) enterStats() error {
+	backend, err := m.ensureBackend()
+	if err != nil {
+		return err
+	}
+	gb, ok := backend.(*core.GitBackend)
+	if !ok {
+		return fmt.Errorf("stats chart requires a git backend")
+	}
+	if err := m.stats.open(gb); err != nil {
+		return err
+	}
+	fullH := m.height - 1
+	if fullH < 1 {
+		fullH = 1
+	}
+	m.stats.SetSize(m.width, fullH)
+	m.viewMode = viewStats
+	return nil
+}
+
 // updateView routes a key press to the active structural view. F1/Esc returns to
 // the main view; F2/F3 hop directly between the structural views; everything else
 // is forwarded to the active view, whose reported action (open/close) is applied.
@@ -1027,6 +1055,13 @@ func (m Model) updateView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, statusTick()
 		}
 		return m, nil
+	case "f10":
+		if err := m.enterStats(); err != nil {
+			m.statusMsg = fmt.Sprintf("Error opening stats: %v", err)
+			m.statusTimer = 3
+			return m, statusTick()
+		}
+		return m, nil
 	}
 
 	var action viewAction
@@ -1044,6 +1079,9 @@ func (m Model) updateView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case viewHeatmap:
 		m.heatmap, action = m.heatmap.update(msg)
 		path = "" // heatmap doesn't open scenes
+	case viewStats:
+		m.stats, action = m.stats.update(msg)
+		path = "" // stats chart doesn't open scenes
 	}
 
 	switch action {
