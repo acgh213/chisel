@@ -64,6 +64,10 @@ func (c *corkboardModel) SetSize(w, h int) {
 	c.height = h
 }
 
+func (c corkboardModel) stateTitle() string {
+	return fmt.Sprintf("Corkboard - %s (%d scenes)", c.name, len(c.cards))
+}
+
 // selected returns the path of the card under the cursor, or "".
 func (c corkboardModel) selected() string {
 	if c.cursor < 0 || c.cursor >= len(c.cards) {

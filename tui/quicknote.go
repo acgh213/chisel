@@ -119,8 +119,8 @@ func (q quickNoteModel) view(w, h int, bg string) string {
 		bgLines = append(bgLines, strings.Repeat(" ", w))
 	}
 
-	// Position the popup just above the status bar row (last line of bg).
-	startRow := h - popupH - 1
+	// Position the popup just above the bottom shelf.
+	startRow := h - popupH - bottomShelfRows
 	if startRow < 0 {
 		startRow = 0
 	}

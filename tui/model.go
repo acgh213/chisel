@@ -57,7 +57,7 @@ type layoutSizes struct {
 // to satisfy the minimums. Every dimension is floored at 1 so a tiny terminal
 // can never produce a zero/negative box.
 func computeLayout(width, height int, showRight bool) layoutSizes {
-	paneH := height - 1
+	paneH := height - bottomShelfRows
 	if paneH < 1 {
 		paneH = 1
 	}
@@ -151,7 +151,7 @@ type Model struct {
 	// found. Detected once in NewModel; gates the .docx export offer.
 	pandocPath string
 
-	// prompt is the inline bottom-bar input for binder CRUD (new, rename, delete).
+	// prompt is the inline bottom-shelf input for binder CRUD (new, rename, delete).
 	prompt binderPrompt
 
 	// Right panel (Phase 8). showRightPanel toggles the panel; the panel itself
@@ -166,6 +166,10 @@ type Model struct {
 	// Search overlay (Phase 13). Ctrl+F opens from any state; the popup
 	// owns all keys while active and is checked before all other dispatch.
 	search searchModel
+
+	// Help overlay. Question mark opens from non-text-input states; editor,
+	// prompt, search input, and quick-note preserve literal prose entry.
+	help helpModel
 
 	// Reading mode (Phase 14). F6 opens a full-screen centered reading view
 	// for the currently loaded scene; owns all keys while active.
@@ -250,6 +254,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// When the search overlay is open it owns all keys.
 		if m.search.active() {
 			return m.updateSearch(msg)
+		}
+		// When the help overlay is open it owns all keys.
+		if m.help.active() {
+			m.help = m.help.update(msg)
+			return m, nil
+		}
+		// ? opens help from non-text-input states only.
+		if msg.String() == "?" && !m.reader.active() && !m.prompt.active() &&
+			(m.showHistory || m.viewMode != viewMain || m.focus == PaneBinder) {
+			m.help.open()
+			return m, nil
 		}
 		// F6 opens reading mode from any state (not while quickNote or search is open).
 		if msg.String() == "f6" && !m.reader.active() && !m.quickNote.active() && !m.search.active() {
@@ -610,33 +625,19 @@ func (m Model) View() tea.View {
 		return altView(m.reader.view(m.width, m.height), sprintBar)
 	}
 
-	// Pane sizes are set in layout() on WindowSizeMsg; View only reads state.
-	var statusParts []string
-	if m.statusMsg != "" {
-		statusParts = append(statusParts, m.statusMsg)
-	}
-
 	var body string
 	switch {
 	case m.showHistory:
 		body = m.history.view()
-		if m.history.mode == historyDiff {
-			statusParts = append(statusParts, "[History]  ↑/↓ Scroll  Esc=Back  r=Restore")
-		} else {
-			statusParts = append(statusParts, "[History]  ↑/↓ Navigate  Enter=Diff  r=Restore  Esc=Close")
-		}
 
 	case m.viewMode == viewCorkboard:
 		body = m.corkboard.view()
-		statusParts = append(statusParts, "[Corkboard]  ←→↑↓ Navigate  Enter=Open  F3=Outliner  F4=Timeline  Esc=Back")
 
 	case m.viewMode == viewOutliner:
 		body = m.outliner.view()
-		statusParts = append(statusParts, "[Outliner]  ↑/↓ Navigate  ←/→ Collapse/Expand  Enter=Open  F2=Corkboard  F4=Timeline  Esc=Back")
 
 	case m.viewMode == viewTimeline:
 		body = m.timeline.view()
-		statusParts = append(statusParts, "[Timeline]  ↑/↓ Navigate  Enter=Open  F2=Corkboard  F3=Outliner  Esc=Back")
 
 	default:
 		if m.showRightPanel {
@@ -653,52 +654,9 @@ func (m Model) View() tea.View {
 				m.editor.View(),
 			)
 		}
-
-		if m.statusMsg == "" && m.editor.FilePath() != "" {
-			mod := ""
-			if m.editor.IsModified() {
-				mod = " ●"
-			}
-			statusParts = append(statusParts, fmt.Sprintf("%s — %d words%s",
-				filepath.Base(m.editor.FilePath()),
-				m.wordCount,
-				mod,
-			))
-		}
-
-		if m.focus == PaneBinder {
-			statusParts = append(statusParts, "[Binder]  Tab=Switch  n=New  N=Folder  r=Rename  d=Delete  F2=Corkboard  F3=Outliner  F4=Timeline  F5=Panel  F6=Read  F7=Sprint  F8=Theme  ^F=Search")
-		} else {
-			statusParts = append(statusParts, "[Editor]  Tab=Switch  ^S=Save  ^N=New  F2=Corkboard  F4=Timeline  F5=Panel  F6=Read  F7=Sprint  F8=Theme  ^E=Export  ^F=Search")
-		}
 	}
 
-	// Sprint countdown or session word count, shown in every view.
-	if m.sprintActive {
-		remaining := time.Until(m.sprintEnd)
-		gained := m.sessionWords - m.sprintWordStart
-		pct := remaining.Seconds() / (25 * 60)
-		statusParts = append(statusParts, fmt.Sprintf("%s %s  +%d words", sprintBarStr(pct, 12), formatDuration(remaining), gained))
-	} else if m.sessionWords > 0 {
-		if m.config.DailyGoal > 0 {
-			statusParts = append(statusParts, fmt.Sprintf("+%d/%d today", m.sessionWords, m.config.DailyGoal))
-		} else {
-			statusParts = append(statusParts, fmt.Sprintf("+%d today", m.sessionWords))
-		}
-	}
-
-	// The bottom row is either the prompt bar (during CRUD operations) or the
-	// regular status bar. Both are exactly one row.
-	var bottomBar string
-	if m.prompt.active() {
-		bottomBar = m.prompt.view(m.width)
-	} else {
-		statusText := truncate(strings.Join(statusParts, "  │  "),
-			m.width-StatusBarStyle.GetHorizontalFrameSize())
-		bottomBar = StatusBarStyle.Width(m.width).MaxHeight(1).Render(statusText)
-	}
-
-	full := lipgloss.JoinVertical(lipgloss.Left, body, bottomBar)
+	full := lipgloss.JoinVertical(lipgloss.Left, body, m.renderBottomShelf())
 
 	// Quick-note popup overlays the existing view; background content stays visible.
 	if m.quickNote.active() {
@@ -709,13 +667,16 @@ func (m Model) View() tea.View {
 	if m.search.active() {
 		return altView(m.search.view(m.width, m.height, full), sprintBar)
 	}
+	if m.help.active() {
+		return altView(m.help.view(m.width, m.height, full), sprintBar)
+	}
 
 	return altView(full, sprintBar)
 }
 
-// fullHeight returns the usable height above the status bar, floored at 1.
+// fullHeight returns the usable height above the bottom shelf, floored at 1.
 func (m Model) fullHeight() int {
-	h := m.height - 1
+	h := m.height - bottomShelfRows
 	if h < 1 {
 		return 1
 	}
@@ -730,7 +691,7 @@ func (m *Model) layout() {
 	m.editor.SetSize(l.editorW, l.paneH)
 	m.rightPanel.SetSize(l.rightPanelW, l.paneH)
 	// The history browser and the structural views all take the full width
-	// above the status bar.
+	// above the bottom shelf.
 	fullH := m.fullHeight()
 	m.history.SetSize(m.width, fullH)
 	m.corkboard.SetSize(m.width, fullH)
@@ -1188,19 +1149,4 @@ func formatDuration(d time.Duration) string {
 	m := int(d.Minutes())
 	s := int(d.Seconds()) % 60
 	return fmt.Sprintf("%02d:%02d", m, s)
-}
-
-// sprintBarStr renders a fixed-width inline progress bar for the sprint timer.
-// pct is the fraction remaining (1.0 = full, 0.0 = empty).
-func sprintBarStr(pct float64, width int) string {
-	if pct < 0 {
-		pct = 0
-	}
-	if pct > 1 {
-		pct = 1
-	}
-	filled := int(pct * float64(width))
-	bar := lipgloss.NewStyle().Foreground(ColorAccent).Render(strings.Repeat("█", filled)) +
-		lipgloss.NewStyle().Foreground(ColorDim).Render(strings.Repeat("░", width-filled))
-	return bar
 }

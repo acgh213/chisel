@@ -50,6 +50,10 @@ func (t *timelineModel) SetSize(w, h int) {
 	t.height = h
 }
 
+func (t timelineModel) stateTitle() string {
+	return fmt.Sprintf("Timeline - %s (%d scenes)", folderDisplayName(t.root, t.root), len(t.entries))
+}
+
 // selected returns the path of the entry under the cursor, or "".
 func (t timelineModel) selected() string {
 	if t.cursor < 0 || t.cursor >= len(t.entries) {
