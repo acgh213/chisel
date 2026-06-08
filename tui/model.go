@@ -31,6 +31,7 @@ const (
 	viewCorkboard
 	viewOutliner
 	viewTimeline
+	viewHeatmap
 )
 
 // minBinderWidth is the narrowest the binder pane may shrink to before the
@@ -145,6 +146,7 @@ type Model struct {
 	corkboard corkboardModel
 	outliner  outlinerModel
 	timeline  timelineModel
+	heatmap   heatmapModel
 
 	// pandocPath is the resolved path to the pandoc binary, or "" if not
 	// found. Detected once in NewModel; gates the .docx export offer.
@@ -619,15 +621,19 @@ func (m Model) View() string {
 
 	case m.viewMode == viewCorkboard:
 		body = m.corkboard.view()
-		statusParts = append(statusParts, "[Corkboard]  ←→↑↓ Navigate  Enter=Open  F3=Outliner  F4=Timeline  Esc=Back")
+		statusParts = append(statusParts, "[Corkboard]  ←→↑↓ Navigate  Enter=Open  F3=Outliner  F4=Timeline  F9=Heatmap  Esc=Back")
 
 	case m.viewMode == viewOutliner:
 		body = m.outliner.view()
-		statusParts = append(statusParts, "[Outliner]  ↑/↓ Navigate  ←/→ Collapse/Expand  Enter=Open  F2=Corkboard  F4=Timeline  Esc=Back")
+		statusParts = append(statusParts, "[Outliner]  ↑/↓ Navigate  ←/→ Collapse/Expand  Enter=Open  F2=Corkboard  F4=Timeline  F9=Heatmap  Esc=Back")
 
 	case m.viewMode == viewTimeline:
 		body = m.timeline.view()
-		statusParts = append(statusParts, "[Timeline]  ↑/↓ Navigate  Enter=Open  F2=Corkboard  F3=Outliner  Esc=Back")
+		statusParts = append(statusParts, "[Timeline]  ↑/↓ Navigate  Enter=Open  F2=Corkboard  F3=Outliner  F9=Heatmap  Esc=Back")
+
+	case m.viewMode == viewHeatmap:
+		body = m.heatmap.view()
+		statusParts = append(statusParts, "[Heatmap]  ←→↑↓ Navigate  Enter=Details  Esc=Back")
 
 	default:
 		if m.showRightPanel {
@@ -658,9 +664,9 @@ func (m Model) View() string {
 		}
 
 		if m.focus == PaneBinder {
-			statusParts = append(statusParts, "[Binder]  Tab=Switch  n=New  N=Folder  r=Rename  d=Delete  F2=Corkboard  F3=Outliner  F4=Timeline  F5=Panel  F6=Read  F7=Sprint  ^T=Theme  ^F=Search")
+			statusParts = append(statusParts, "[Binder]  Tab=Switch  n=New  N=Folder  r=Rename  d=Delete  F2=Corkboard  F3=Outliner  F4=Timeline  F5=Panel  F6=Read  F7=Sprint  F8=Theme  F9=Heatmap  ^F=Search")
 		} else {
-			statusParts = append(statusParts, "[Editor]  Tab=Switch  ^S=Save  ^N=New  F2=Corkboard  F4=Timeline  F5=Panel  F6=Read  F7=Sprint  ^T=Theme  ^E=Export  ^F=Search")
+			statusParts = append(statusParts, "[Editor]  Tab=Switch  ^S=Save  ^N=New  F2=Corkboard  F4=Timeline  F5=Panel  F6=Read  F7=Sprint  F9=Heatmap  ^T=Theme  ^E=Export  ^F=Search")
 		}
 	}
 
@@ -963,6 +969,28 @@ func (m *Model) enterTimeline() error {
 	return nil
 }
 
+// enterHeatmap loads the 52-week writing calendar heatmap and shows it.
+func (m *Model) enterHeatmap() error {
+	backend, err := m.ensureBackend()
+	if err != nil {
+		return err
+	}
+	gb, ok := backend.(*core.GitBackend)
+	if !ok {
+		return fmt.Errorf("heatmap requires a git backend")
+	}
+	if err := m.heatmap.open(gb); err != nil {
+		return err
+	}
+	fullH := m.height - 1
+	if fullH < 1 {
+		fullH = 1
+	}
+	m.heatmap.SetSize(m.width, fullH)
+	m.viewMode = viewHeatmap
+	return nil
+}
+
 // updateView routes a key press to the active structural view. F1/Esc returns to
 // the main view; F2/F3 hop directly between the structural views; everything else
 // is forwarded to the active view, whose reported action (open/close) is applied.
@@ -992,6 +1020,13 @@ func (m Model) updateView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, statusTick()
 		}
 		return m, nil
+	case "f9":
+		if err := m.enterHeatmap(); err != nil {
+			m.statusMsg = fmt.Sprintf("Error opening heatmap: %v", err)
+			m.statusTimer = 3
+			return m, statusTick()
+		}
+		return m, nil
 	}
 
 	var action viewAction
@@ -1006,6 +1041,9 @@ func (m Model) updateView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case viewTimeline:
 		m.timeline, action = m.timeline.update(msg)
 		path = m.timeline.selected()
+	case viewHeatmap:
+		m.heatmap, action = m.heatmap.update(msg)
+		path = "" // heatmap doesn't open scenes
 	}
 
 	switch action {
