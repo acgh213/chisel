@@ -68,6 +68,7 @@ chisel/
 ├── main.go            # entry point: subcommand dispatch (init vs TUI open)
 ├── go.mod / go.sum
 ├── core/
+│   ├── CLAUDE.md          # per-file API reference for the core package
 │   ├── project.go / project_test.go
 │   ├── scene.go / scene_test.go
 │   ├── metadata.go / metadata_test.go
@@ -76,14 +77,24 @@ chisel/
 │   ├── export.go / export_test.go
 │   ├── crud.go / crud_test.go
 │   ├── scaffold.go / scaffold_test.go
-│   └── character.go / character_test.go
+│   ├── character.go / character_test.go
+│   ├── location.go
+│   ├── timeline.go
+│   ├── notes.go
+│   ├── search.go
+│   └── config.go
 └── tui/
+    ├── CLAUDE.md          # per-file API reference for the tui package
     ├── model.go / model_test.go
     ├── binder.go / binder_test.go
     ├── editor.go
     ├── history.go / history_test.go
     ├── corkboard.go
     ├── outliner.go
+    ├── timeline.go
+    ├── quicknote.go
+    ├── search.go
+    ├── reader.go
     ├── rightpanel.go
     ├── prompt.go
     ├── views_test.go
@@ -117,9 +128,11 @@ No Python backend. No LLM. No manifest files. No system git dependency. No `os/e
 
 ## styling
 
-- Peach theme only. Colors defined as `lipgloss.Color` constants in `tui/styles.go`.
-- Every component references these constants — no hardcoded hex values in component code.
+- Four dark themes: **peach** (default), **forest**, **ocean**, **midnight**. F8 cycles and persists the choice to `.chisel.yaml`.
+- Colors defined as `lipgloss.Color` package-level vars in `tui/styles.go`; `ApplyTheme(name)` rebinds them and calls `rebuildStyles()`.
+- Every component references the `Color*` vars — no hardcoded hex values in component code.
 - Key style vars: `StatusBarStyle`, `PromptBarStyle`, `HistoryStyle`, `RightPanelStyle`, `CardStyle`, `CardSelectedStyle`, `ViewHeaderStyle`, `DiffAddStyle`/`DiffDelStyle`/`DiffMetaStyle`, `MetTargetStyle`
+- Light theme deferred: requires full-screen bg painting (terminal bg is transparent; light fg is unreadable without it).
 
 ## keyboard shortcuts
 
