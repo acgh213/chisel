@@ -571,23 +571,43 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// altView wraps s in a tea.View with AltScreen enabled and the given progress bar.
+// bar nil means no change to the terminal's progress indicator.
+func altView(s string, bar *tea.ProgressBar) tea.View {
+	v := tea.NewView(s)
+	v.AltScreen = true
+	v.ProgressBar = bar
+	return v
+}
+
 // View renders the entire application.
 func (m Model) View() tea.View {
 	if m.quitting {
-		return tea.NewView("")
+		return tea.NewView("") // AltScreen intentionally false — exits alt screen on quit
+	}
+
+	// sprintBar drives the terminal-native progress indicator (Windows Terminal
+	// taskbar / title bar) during a sprint. ProgressBarNone explicitly clears the
+	// indicator when the sprint is inactive; the renderer skips the write when the
+	// value is unchanged from the previous frame, so this is cheap.
+	var sprintBar *tea.ProgressBar
+	if m.sprintActive {
+		pct := int(time.Until(m.sprintEnd).Seconds() / (25 * 60) * 100)
+		if pct < 0 {
+			pct = 0
+		}
+		sprintBar = tea.NewProgressBar(tea.ProgressBarDefault, pct)
+	} else {
+		sprintBar = tea.NewProgressBar(tea.ProgressBarNone, 0)
 	}
 
 	if m.width == 0 {
-		v := tea.NewView("Starting...")
-		v.AltScreen = true
-		return v
+		return altView("Starting...", sprintBar)
 	}
 
 	// Reading mode is a full-screen takeover — no binder, editor, or status bar.
 	if m.reader.active() {
-		v := tea.NewView(m.reader.view(m.width, m.height))
-		v.AltScreen = true
-		return v
+		return altView(m.reader.view(m.width, m.height), sprintBar)
 	}
 
 	// Pane sizes are set in layout() on WindowSizeMsg; View only reads state.
@@ -657,7 +677,8 @@ func (m Model) View() tea.View {
 	if m.sprintActive {
 		remaining := time.Until(m.sprintEnd)
 		gained := m.sessionWords - m.sprintWordStart
-		statusParts = append(statusParts, fmt.Sprintf("Sprint %s  +%d words", formatDuration(remaining), gained))
+		pct := remaining.Seconds() / (25 * 60)
+		statusParts = append(statusParts, fmt.Sprintf("%s %s  +%d words", sprintBarStr(pct, 12), formatDuration(remaining), gained))
 	} else if m.sessionWords > 0 {
 		if m.config.DailyGoal > 0 {
 			statusParts = append(statusParts, fmt.Sprintf("+%d/%d today", m.sessionWords, m.config.DailyGoal))
@@ -681,21 +702,15 @@ func (m Model) View() tea.View {
 
 	// Quick-note popup overlays the existing view; background content stays visible.
 	if m.quickNote.active() {
-		v := tea.NewView(m.quickNote.view(m.width, m.height, full))
-		v.AltScreen = true
-		return v
+		return altView(m.quickNote.view(m.width, m.height, full), sprintBar)
 	}
 
 	// Search overlay likewise sits on top of the existing view.
 	if m.search.active() {
-		v := tea.NewView(m.search.view(m.width, m.height, full))
-		v.AltScreen = true
-		return v
+		return altView(m.search.view(m.width, m.height, full), sprintBar)
 	}
 
-	v := tea.NewView(full)
-	v.AltScreen = true
-	return v
+	return altView(full, sprintBar)
 }
 
 // fullHeight returns the usable height above the status bar, floored at 1.
@@ -1173,4 +1188,19 @@ func formatDuration(d time.Duration) string {
 	m := int(d.Minutes())
 	s := int(d.Seconds()) % 60
 	return fmt.Sprintf("%02d:%02d", m, s)
+}
+
+// sprintBarStr renders a fixed-width inline progress bar for the sprint timer.
+// pct is the fraction remaining (1.0 = full, 0.0 = empty).
+func sprintBarStr(pct float64, width int) string {
+	if pct < 0 {
+		pct = 0
+	}
+	if pct > 1 {
+		pct = 1
+	}
+	filled := int(pct * float64(width))
+	bar := lipgloss.NewStyle().Foreground(ColorAccent).Render(strings.Repeat("█", filled)) +
+		lipgloss.NewStyle().Foreground(ColorDim).Render(strings.Repeat("░", width-filled))
+	return bar
 }
