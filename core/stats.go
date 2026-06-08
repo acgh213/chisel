@@ -1,7 +1,10 @@
 package core
 
 import (
+	"fmt"
 	"sort"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -9,6 +12,13 @@ import (
 type Streak struct {
 	Current int // consecutive days ending at today (or yesterday, if today has no commits yet)
 	Longest int // best run ever
+}
+
+// DayCount holds the word-count snapshot for a single calendar day.
+type DayCount struct {
+	Date  time.Time
+	Words int // total project words at end of day
+	Delta int // words written that day (positive when words increased)
 }
 
 // ActiveDays returns the set of calendar days (UTC) that have at least one
@@ -52,6 +62,93 @@ func DailyActivity(gb *GitBackend) (map[string][]Revision, error) {
 		byDay[key] = append(byDay[key], r)
 	}
 	return byDay, nil
+}
+
+// DailyWordCounts reconstructs total project word counts over time by parsing
+// commit messages. Each commit message carries per-scene word counts ("scene:
+// name.md — N words"). The function tracks the latest word count for each file
+// and sums them to produce a per-day total and delta. Days with no commits
+// carry forward the previous total with zero delta.
+func DailyWordCounts(gb *GitBackend) ([]DayCount, error) {
+	byDay, err := DailyActivity(gb)
+	if err != nil {
+		return nil, err
+	}
+	if len(byDay) == 0 {
+		return nil, nil
+	}
+
+	// Sort days oldest-first.
+	var days []string
+	for d := range byDay {
+		days = append(days, d)
+	}
+	sort.Strings(days)
+
+	fileWords := make(map[string]int) // file basename → latest known word count
+	var result []DayCount
+	prevTotal := 0
+
+	for _, day := range days {
+		commits := byDay[day]
+		seen := make(map[string]bool)
+
+		// Process commits within the day (already newest-first from DailyActivity).
+		for _, rev := range commits {
+			file, wc := parseCommitMessage(rev.Message)
+			if file == "" || seen[file] {
+				continue
+			}
+			seen[file] = true
+			fileWords[file] = wc
+		}
+
+		// Sum all known file word counts for the project total.
+		total := 0
+		for _, wc := range fileWords {
+			total += wc
+		}
+
+		t, err := time.Parse("2006-01-02", day)
+		if err != nil {
+			return nil, fmt.Errorf("parsing date %q: %w", day, err)
+		}
+		result = append(result, DayCount{
+			Date:  t,
+			Words: total,
+			Delta: total - prevTotal,
+		})
+		prevTotal = total
+	}
+
+	return result, nil
+}
+
+// parseCommitMessage extracts the file basename and word count from a chisel
+// commit message. Format: "scene: <basename> — <N> words". Returns ("", 0) on
+// parse failure.
+func parseCommitMessage(msg string) (string, int) {
+	// Expected: "scene: ch01.md — 1,247 words"
+	if !strings.HasPrefix(msg, "scene: ") {
+		return "", 0
+	}
+	rest := strings.TrimPrefix(msg, "scene: ")
+
+	// Split on " — " to separate filename from word count.
+	parts := strings.SplitN(rest, " — ", 2)
+	if len(parts) != 2 {
+		return "", 0
+	}
+	file := parts[0]
+
+	// Parse "<N> words" or "<N> words" (with comma).
+	wcPart := strings.TrimSuffix(parts[1], " words")
+	wcPart = strings.ReplaceAll(wcPart, ",", "")
+	n, err := strconv.Atoi(wcPart)
+	if err != nil {
+		return "", 0
+	}
+	return file, n
 }
 
 // ComputeStreak derives current and longest streaks from a sorted list of

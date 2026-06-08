@@ -3,9 +3,82 @@ package core
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestParseCommitMessage(t *testing.T) {
+	tests := []struct {
+		msg      string
+		wantFile string
+		wantWC   int
+	}{
+		{"scene: ch01.md — 1,247 words", "ch01.md", 1247},
+		{"scene: scene.md — 42 words", "scene.md", 42},
+		{"scene: ch01.md — 0 words", "ch01.md", 0},
+		{"not a scene commit", "", 0},
+		{"scene: no separator", "", 0},
+		{"", "", 0},
+		{"scene: file.md — 1,000,000 words", "file.md", 1000000},
+	}
+	for _, tt := range tests {
+		file, wc := parseCommitMessage(tt.msg)
+		if file != tt.wantFile || wc != tt.wantWC {
+			t.Errorf("parseCommitMessage(%q) = (%q, %d), want (%q, %d)",
+				tt.msg, file, wc, tt.wantFile, tt.wantWC)
+		}
+	}
+}
+
+func TestDailyWordCounts_Integration(t *testing.T) {
+	dir := t.TempDir()
+	gb, err := OpenGitBackend(dir)
+	if err != nil {
+		t.Fatalf("OpenGitBackend: %v", err)
+	}
+
+	// Day 1: write scene1 with 100 words.
+	f1 := filepath.Join(dir, "scene1.md")
+	if err := os.WriteFile(f1, []byte(strings.Repeat("word ", 100)), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := gb.Snapshot(f1, "scene: scene1.md — 100 words"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Day 2: write scene2 with 50 words, scene1 unchanged (still 100).
+	f2 := filepath.Join(dir, "scene2.md")
+	if err := os.WriteFile(f2, []byte(strings.Repeat("word ", 50)), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// scene1 unchanged — snapshot it too so git has a commit for the day
+	if err := gb.Snapshot(f1, "scene: scene1.md — 100 words"); err != nil {
+		t.Fatal(err)
+	}
+	if err := gb.Snapshot(f2, "scene: scene2.md — 50 words"); err != nil {
+		t.Fatal(err)
+	}
+
+	counts, err := DailyWordCounts(gb)
+	if err != nil {
+		t.Fatalf("DailyWordCounts: %v", err)
+	}
+
+	// Both commits happen in the same second, so they land on the same UTC day.
+	// The test verifies that the last word count per file is used and summed correctly.
+	if len(counts) != 1 {
+		t.Fatalf("expected 1 day (same-second commits), got %d", len(counts))
+	}
+
+	// scene1 (100) + scene2 (50) = 150 total project words.
+	if counts[0].Words != 150 {
+		t.Errorf("total words: got %d, want 150", counts[0].Words)
+	}
+	if counts[0].Delta != 150 {
+		t.Errorf("delta: got %d, want 150", counts[0].Delta)
+	}
+}
 
 func TestComputeStreak_Empty(t *testing.T) {
 	s := ComputeStreak(nil)
