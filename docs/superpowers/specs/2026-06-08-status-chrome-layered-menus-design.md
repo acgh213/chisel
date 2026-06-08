@@ -74,16 +74,20 @@ The state row is the place for information about what is happening now:
 - file name
 - word count
 - modified marker
+- active structural view context
 - sprint time remaining and word gain
 - session words or daily goal progress
 
 When a temporary status message is present, it should lead the row. It may suppress less important file state if width is tight, but it should not erase sprint state while a sprint is active.
+
+In normal binder/editor mode, the state row should prioritize the open file context. In structural views, it should identify the active view and its current scope, preserving the context that existing view headers/status text already provide. Examples include `Corkboard - Acts (12 scenes)`, `Outliner - Novel (42 items)`, `Timeline - Novel (19 scenes)`, and `History - chapter-01.md (6 snapshots)`.
 
 Suggested compact examples:
 
 ```text
 Saved chapter-01.md (842 words)        Sprint 18:42 +12        Today +144/1000
 chapter-01.md 842w *                  Sprint 18:42 +12        Today +144/1000
+Corkboard - Acts (12 scenes)          Sprint 18:42 +12        Today +144/1000
 ```
 
 The exact separators can be chosen during implementation, but the row should favor compact state over prose.
