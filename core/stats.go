@@ -36,6 +36,24 @@ func ActiveDays(gb *GitBackend) ([]time.Time, error) {
 	return days, nil
 }
 
+// DailyActivity groups all commits by UTC calendar day, returning a map from
+// "2006-01-02" → revisions (newest first within each day). Used by the heatmap
+// for color intensity and day-detail drilldown.
+func DailyActivity(gb *GitBackend) (map[string][]Revision, error) {
+	revs, err := gb.AllLog()
+	if err != nil {
+		return nil, err
+	}
+
+	byDay := make(map[string][]Revision)
+	for _, r := range revs {
+		y, m, d := r.Timestamp.UTC().Date()
+		key := time.Date(y, m, d, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
+		byDay[key] = append(byDay[key], r)
+	}
+	return byDay, nil
+}
+
 // ComputeStreak derives current and longest streaks from a sorted list of
 // active writing days (oldest-first). A "current" streak is consecutive days
 // ending at today; if today has no commit yet, it ends at yesterday. A gap of
