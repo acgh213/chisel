@@ -33,6 +33,7 @@ const (
 	viewTimeline
 	viewHeatmap
 	viewStats
+	viewBookmarks
 )
 
 // minBinderWidth is the narrowest the binder pane may shrink to before the
@@ -196,6 +197,9 @@ type Model struct {
 	// Project word count (issue #31). Total words across all scenes,
 	// refreshed on save and scene open.
 	projectWords int
+
+	// Bookmarks list view.
+	bookmarks bookmarkListModel
 }
 
 // NewModel creates a new chisel root model for the given project directory.
@@ -230,6 +234,7 @@ func NewModel(root string) (Model, error) {
 		theme:      theme,
 		config:     cfg,
 	}
+	m.binder.SetBookmarks(cfg.Bookmarks)
 	m.editor.RefreshStyles()
 	return m, nil
 }
@@ -533,7 +538,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				exportMsg = fmt.Sprintf("Exported: %s", filepath.Base(result.MarkdownPath))
 			}
-			cmds = append(cmds, m.setStatus(exportMsg, 3))
+		cmds = append(cmds, m.setStatus(exportMsg, 3))
+
+		case "ctrl+b":
+			if m.editor.FilePath() != "" {
+				rel, _ := filepath.Rel(m.root, m.editor.FilePath())
+				added := core.ToggleBookmark(&m.config, rel)
+				if err := core.SaveConfig(m.root, m.config); err != nil {
+					cmds = append(cmds, m.setStatus(fmt.Sprintf("Bookmark save error: %v", err), 3))
+				} else if added {
+					cmds = append(cmds, m.setStatus(fmt.Sprintf("Bookmarked %s", filepath.Base(rel)), 2))
+				} else {
+					cmds = append(cmds, m.setStatus(fmt.Sprintf("Removed bookmark: %s", filepath.Base(rel)), 2))
+				}
+				// Sync binder bookmark indicators.
+				m.binder.SetBookmarks(m.config.Bookmarks)
+			} else {
+				cmds = append(cmds, m.setStatus("Open a scene first to bookmark it.", 2))
+			}
 
 		case "f8":
 			m.theme = NextTheme(m.theme)
@@ -554,6 +576,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "f10":
 			if err := m.enterStats(); err != nil {
 				cmds = append(cmds, m.setStatus(fmt.Sprintf("Error opening stats: %v", err), 3))
+			}
+
+		case "f11":
+			if err := m.enterBookmarks(); err != nil {
+				cmds = append(cmds, m.setStatus(fmt.Sprintf("Error opening bookmarks: %v", err), 3))
 			}
 
 		default:
@@ -679,6 +706,9 @@ func (m Model) View() tea.View {
 
 	case m.viewMode == viewStats:
 		body = m.stats.view()
+
+	case m.viewMode == viewBookmarks:
+		body = m.bookmarks.view()
 
 	default:
 		if m.showRightPanel {
@@ -988,6 +1018,14 @@ func (m *Model) enterStats() error {
 	m.stats.projectWords = m.projectWords
 	m.stats.SetSize(m.width, m.fullHeight())
 	m.viewMode = viewStats
+	return nil
+}
+
+// enterBookmarks loads the bookmark list and shows it.
+func (m *Model) enterBookmarks() error {
+	m.bookmarks.open(m.root, m.config.Bookmarks)
+	m.bookmarks.SetSize(m.width, m.fullHeight())
+	m.viewMode = viewBookmarks
 	return nil
 }
 

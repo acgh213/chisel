@@ -14,14 +14,15 @@ import (
 // The tree data (core.FileNode) comes from core; the binder owns only the
 // view state: cursor, scroll offset, focus, and size.
 type BinderModel struct {
-	root   string
-	nodes  []*core.FileNode // root-level nodes (the tree)
-	flat   []*core.FileNode // flattened visible nodes for rendering
-	cursor int              // index in flat list
-	offset int              // scroll offset
-	focus  bool
-	width  int
-	height int
+	root      string
+	nodes     []*core.FileNode // root-level nodes (the tree)
+	flat      []*core.FileNode // flattened visible nodes for rendering
+	cursor    int              // index in flat list
+	offset    int              // scroll offset
+	focus     bool
+	width     int
+	height    int
+	bookmarks []string // relative paths of bookmarked scenes
 }
 
 // NewBinder creates a binder model rooted at the given directory.
@@ -151,6 +152,11 @@ func (m BinderModel) renderNode(node *core.FileNode, selected bool) string {
 	}
 
 	display := indent + prefix + node.Name
+
+	// Show a ★ prefix for bookmarked scenes.
+	if m.isBookmarked(node) {
+		display = indent + prefix + "★ " + node.Name
+	}
 
 	// Append a status glyph for scenes that carry one (shape-coded progression:
 	// ○ draft → ◐ revised → ● done). Inherits the line's color.
@@ -324,4 +330,27 @@ func (m *BinderModel) scrollToCursor() {
 	if m.offset < 0 {
 		m.offset = 0
 	}
+}
+
+// SetBookmarks updates the list of bookmarked scene paths (relative to root).
+// Called by the root model after toggling a bookmark.
+func (m *BinderModel) SetBookmarks(bm []string) {
+	m.bookmarks = bm
+}
+
+// isBookmarked checks if a node's path (relative to root) is bookmarked.
+func (m BinderModel) isBookmarked(node *core.FileNode) bool {
+	if node.IsDir || len(m.bookmarks) == 0 {
+		return false
+	}
+	rel, err := filepath.Rel(m.root, node.Path)
+	if err != nil {
+		return false
+	}
+	for _, b := range m.bookmarks {
+		if b == rel {
+			return true
+		}
+	}
+	return false
 }
