@@ -799,6 +799,50 @@ func TestSprintGainIncludesUnsavedWords(t *testing.T) {
 	}
 }
 
+// TestSprintProgressBar verifies that View() attaches ProgressBarDefault during
+// an active sprint and ProgressBarNone after the sprint stops.
+func TestSprintProgressBar(t *testing.T) {
+	dir := twoSceneProject(t)
+	m0, err := NewModel(dir)
+	if err != nil {
+		t.Fatalf("NewModel: %v", err)
+	}
+	var m tea.Model = m0
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+
+	// Before sprint: bar should be ProgressBarNone (clear state).
+	v := m.(Model).View()
+	if v.ProgressBar == nil {
+		t.Fatal("ProgressBar should always be set (None when idle)")
+	}
+	if v.ProgressBar.State != tea.ProgressBarNone {
+		t.Errorf("idle ProgressBar.State = %v, want ProgressBarNone", v.ProgressBar.State)
+	}
+
+	// Start sprint.
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyF7})
+	v = m.(Model).View()
+	if v.ProgressBar == nil {
+		t.Fatal("ProgressBar must not be nil when sprint is active")
+	}
+	if v.ProgressBar.State != tea.ProgressBarDefault {
+		t.Errorf("active sprint ProgressBar.State = %v, want ProgressBarDefault", v.ProgressBar.State)
+	}
+	if v.ProgressBar.Value <= 0 || v.ProgressBar.Value > 100 {
+		t.Errorf("active sprint ProgressBar.Value = %d, want in (0, 100]", v.ProgressBar.Value)
+	}
+
+	// Stop sprint.
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyF7})
+	v = m.(Model).View()
+	if v.ProgressBar == nil {
+		t.Fatal("ProgressBar should always be set (None after stop)")
+	}
+	if v.ProgressBar.State != tea.ProgressBarNone {
+		t.Errorf("stopped sprint ProgressBar.State = %v, want ProgressBarNone", v.ProgressBar.State)
+	}
+}
+
 // TestSearchOpensFromStructuralView confirms Ctrl+F works even when a structural
 // view (corkboard, outliner, timeline) is the active mode.
 func TestSearchOpensFromStructuralView(t *testing.T) {

@@ -571,23 +571,43 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// altView wraps s in a tea.View with AltScreen enabled and the given progress bar.
+// bar nil means no change to the terminal's progress indicator.
+func altView(s string, bar *tea.ProgressBar) tea.View {
+	v := tea.NewView(s)
+	v.AltScreen = true
+	v.ProgressBar = bar
+	return v
+}
+
 // View renders the entire application.
 func (m Model) View() tea.View {
 	if m.quitting {
-		return tea.NewView("")
+		return tea.NewView("") // AltScreen intentionally false — exits alt screen on quit
+	}
+
+	// sprintBar drives the terminal-native progress indicator (Windows Terminal
+	// taskbar / title bar) during a sprint. ProgressBarNone explicitly clears the
+	// indicator when the sprint is inactive; the renderer skips the write when the
+	// value is unchanged from the previous frame, so this is cheap.
+	var sprintBar *tea.ProgressBar
+	if m.sprintActive {
+		pct := int(time.Until(m.sprintEnd).Seconds() / (25 * 60) * 100)
+		if pct < 0 {
+			pct = 0
+		}
+		sprintBar = tea.NewProgressBar(tea.ProgressBarDefault, pct)
+	} else {
+		sprintBar = tea.NewProgressBar(tea.ProgressBarNone, 0)
 	}
 
 	if m.width == 0 {
-		v := tea.NewView("Starting...")
-		v.AltScreen = true
-		return v
+		return altView("Starting...", sprintBar)
 	}
 
 	// Reading mode is a full-screen takeover — no binder, editor, or status bar.
 	if m.reader.active() {
-		v := tea.NewView(m.reader.view(m.width, m.height))
-		v.AltScreen = true
-		return v
+		return altView(m.reader.view(m.width, m.height), sprintBar)
 	}
 
 	// Pane sizes are set in layout() on WindowSizeMsg; View only reads state.
@@ -681,21 +701,15 @@ func (m Model) View() tea.View {
 
 	// Quick-note popup overlays the existing view; background content stays visible.
 	if m.quickNote.active() {
-		v := tea.NewView(m.quickNote.view(m.width, m.height, full))
-		v.AltScreen = true
-		return v
+		return altView(m.quickNote.view(m.width, m.height, full), sprintBar)
 	}
 
 	// Search overlay likewise sits on top of the existing view.
 	if m.search.active() {
-		v := tea.NewView(m.search.view(m.width, m.height, full))
-		v.AltScreen = true
-		return v
+		return altView(m.search.view(m.width, m.height, full), sprintBar)
 	}
 
-	v := tea.NewView(full)
-	v.AltScreen = true
-	return v
+	return altView(full, sprintBar)
 }
 
 // fullHeight returns the usable height above the status bar, floored at 1.
