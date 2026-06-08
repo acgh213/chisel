@@ -135,6 +135,32 @@ func (gb *GitBackend) Log(path string) ([]Revision, error) {
 	return revs, nil
 }
 
+// AllLog returns every commit in the repository, newest first. Unlike Log, it
+// does not filter by path — useful for cross-file queries like activity stats.
+func (gb *GitBackend) AllLog() ([]Revision, error) {
+	iter, err := gb.repo.Log(&git.LogOptions{
+		Order: git.LogOrderCommitterTime,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("reading log: %w", err)
+	}
+	defer iter.Close()
+
+	var revs []Revision
+	err = iter.ForEach(func(c *object.Commit) error {
+		revs = append(revs, Revision{
+			Hash:      c.Hash.String(),
+			Timestamp: c.Author.When,
+			Message:   strings.TrimSpace(c.Message),
+		})
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("iterating commits: %w", err)
+	}
+	return revs, nil
+}
+
 // Diff returns a unified diff of path between rev1 (older) and rev2 (newer).
 func (gb *GitBackend) Diff(path, rev1, rev2 string) (string, error) {
 	tree1, err := gb.treeAt(rev1)
